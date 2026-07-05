@@ -1,3 +1,23 @@
+.stock-valuation-draggable-modal {
+	cursor: move;
+}
+
+.stock-valuation-modal-title {
+	cursor: move;
+	user-select: none;
+}
+
+.stock-valuation-draggable-modal input,
+.stock-valuation-draggable-modal button,
+.stock-valuation-draggable-modal textarea,
+.stock-valuation-draggable-modal select {
+	cursor: auto;
+}
+
+.modal.stock-valuation-modal-dragging {
+	user-select: none;
+}
+
 .stock-valuation-input-table {
 	width: 100%;
 	margin: 1em 0;

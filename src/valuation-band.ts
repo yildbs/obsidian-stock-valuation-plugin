@@ -52,7 +52,7 @@ export function createValuationBandText(
 	const marketCapMid = operatingProfitMid * perMid;
 	const marketCapMax = operatingProfitMax * perMax;
 	const lines = [
-		`예상 영업이익: ${formatNumber(operatingProfitMin)}억 ~ ${formatNumber(operatingProfitMid)}억 ~ ${formatNumber(operatingProfitMax)}억`,
+		`예상 당기순이익: ${formatNumber(operatingProfitMin)}억 ~ ${formatNumber(operatingProfitMid)}억 ~ ${formatNumber(operatingProfitMax)}억`,
 		`예상 PER: ${formatNumber(perMin)} ~ ${formatNumber(perMid)} ~ ${formatNumber(perMax)}`,
 		`예상 기업 가치: ${formatNumber(marketCapMin)}억 ~ ${formatNumber(marketCapMid)}억 ~ ${formatNumber(marketCapMax)}억`,
 	];

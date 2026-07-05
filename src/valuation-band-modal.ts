@@ -168,7 +168,7 @@ export class ValuationBandModal extends Modal {
 		headerRow.createEl('th', { text: '최대' });
 
 		const tbody = table.createEl('tbody');
-		this.addValuationTableRow(tbody, '영업이익 (억)', [
+		this.addValuationTableRow(tbody, '당기순이익 (억)', [
 			['operatingProfitMin', '필수'],
 			['operatingProfitMid', '자동'],
 			['operatingProfitMax', '필수'],

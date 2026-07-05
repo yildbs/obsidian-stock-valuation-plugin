@@ -1,7 +1,7 @@
 {
 	"name": "obsidian-stock-valuation-plugin",
 	"version": "1.0.0",
-	"description": "Calculate an expected market cap band from operating profit and PER assumptions.",
+	"description": "Calculate an expected market cap band from net income and PER assumptions.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

@@ -1,4 +1,6 @@
 .stock-valuation-block {
+	width: fit-content;
+	max-width: 720px;
 	padding: 12px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
@@ -29,9 +31,10 @@
 
 .stock-valuation-input-table,
 .stock-valuation-result-table {
-	width: 100%;
+	width: auto;
+	max-width: 100%;
 	border-collapse: collapse;
-	table-layout: fixed;
+	table-layout: auto;
 }
 
 .stock-valuation-input-table {
@@ -55,15 +58,25 @@
 
 .stock-valuation-input-table tbody th,
 .stock-valuation-result-table th {
-	width: 24%;
+	width: 8.5rem;
 	color: var(--text-normal);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-medium);
 }
 
 .stock-valuation-input-table input[type='number'] {
-	width: 100%;
+	box-sizing: border-box;
+	width: 11ch;
 	min-width: 0;
+}
+
+.stock-valuation-input-table td:nth-child(2),
+.stock-valuation-input-table td:nth-child(4) {
+	width: 11ch;
+}
+
+.stock-valuation-input-table td:nth-child(3) {
+	width: 13rem;
 }
 
 .stock-valuation-slider-cell {
@@ -85,8 +98,10 @@
 
 .stock-valuation-optional-grid {
 	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-columns: repeat(2, max-content);
 	gap: 10px;
+	width: fit-content;
+	max-width: 100%;
 	margin-bottom: 12px;
 }
 
@@ -101,7 +116,8 @@
 }
 
 .stock-valuation-field input {
-	width: 100%;
+	box-sizing: border-box;
+	width: 13ch;
 	min-width: 0;
 }
 
@@ -117,6 +133,11 @@
 
 .stock-valuation-result-table {
 	font-size: var(--font-ui-small);
+}
+
+.stock-valuation-result-table td {
+	min-width: 9rem;
+	white-space: nowrap;
 }
 
 .stock-valuation-result-table th,
@@ -135,5 +156,10 @@
 
 	.stock-valuation-optional-grid {
 		grid-template-columns: 1fr;
+		width: 100%;
+	}
+
+	.stock-valuation-field input {
+		width: 100%;
 	}
 }

@@ -9,6 +9,7 @@ export class ValuationBandModal extends Modal {
 		operatingProfitMax: '',
 		perMin: '',
 		perMax: '',
+		totalShares: '',
 	};
 
 	constructor(app: App) {
@@ -24,6 +25,7 @@ export class ValuationBandModal extends Modal {
 		this.addNumberSetting('예상 영업이익 최대값 (억)', 'operatingProfitMax');
 		this.addNumberSetting('적정 PER 최소값', 'perMin');
 		this.addNumberSetting('적정 PER 최대값', 'perMax');
+		this.addNumberSetting('총 주식 수 (선택)', 'totalShares');
 
 		new Setting(contentEl).addButton((button) => {
 			button

@@ -3,6 +3,7 @@ export interface ValuationBandInput {
 	operatingProfitMax: string;
 	perMin: string;
 	perMax: string;
+	totalShares: string;
 }
 
 export type ValuationBandResult =
@@ -20,6 +21,7 @@ interface ParsedValuationBandInput {
 	operatingProfitMax: number;
 	perMin: number;
 	perMax: number;
+	totalShares?: number;
 }
 
 const NUMBER_PATTERN = /^-?(?:\d+|\d*\.\d+)$/;
@@ -36,14 +38,24 @@ export function createValuationBandText(
 		parsed.value;
 	const marketCapMin = operatingProfitMin * perMin;
 	const marketCapMax = operatingProfitMax * perMax;
+	const lines = [
+		`예상 영업이익: ${formatNumber(operatingProfitMin)}억 ~ ${formatNumber(operatingProfitMax)}억`,
+		`예상 PER: ${input.perMin.trim()} ~ ${input.perMax.trim()}`,
+		`예상 기업 가치: ${formatNumber(marketCapMin)}억 ~ ${formatNumber(marketCapMax)}억`,
+	];
+
+	if (parsed.value.totalShares !== undefined) {
+		const priceMin = (marketCapMin * 100_000_000) / parsed.value.totalShares;
+		const priceMax = (marketCapMax * 100_000_000) / parsed.value.totalShares;
+		lines.push(`총 주식 수: ${formatNumber(parsed.value.totalShares)}주`);
+		lines.push(
+			`예상 주가: ${formatPrice(priceMin)}원 ~ ${formatPrice(priceMax)}원`,
+		);
+	}
 
 	return {
 		ok: true,
-		text: [
-			`예상 영업이익: ${formatNumber(operatingProfitMin)}억 ~ ${formatNumber(operatingProfitMax)}억`,
-			`예상 PER: ${input.perMin.trim()} ~ ${input.perMax.trim()}`,
-			`예상 기업 가치: ${formatNumber(marketCapMin)}억 ~ ${formatNumber(marketCapMax)}억`,
-		].join('\n'),
+		text: lines.join('\n'),
 	};
 }
 
@@ -61,13 +73,24 @@ function parseInput(input: ValuationBandInput):
 		operatingProfitMax: input.operatingProfitMax.trim(),
 		perMin: input.perMin.trim(),
 		perMax: input.perMax.trim(),
+		totalShares: input.totalShares.trim(),
 	};
+	const requiredValues = [
+		trimmed.operatingProfitMin,
+		trimmed.operatingProfitMax,
+		trimmed.perMin,
+		trimmed.perMax,
+	];
+	const providedValues = [
+		...requiredValues,
+		...(trimmed.totalShares.length > 0 ? [trimmed.totalShares] : []),
+	];
 
-	if (Object.values(trimmed).some((value) => value.length === 0)) {
+	if (requiredValues.some((value) => value.length === 0)) {
 		return { ok: false, message: '모든 값을 입력해주세요.' };
 	}
 
-	if (Object.values(trimmed).some((value) => !NUMBER_PATTERN.test(value))) {
+	if (providedValues.some((value) => !NUMBER_PATTERN.test(value))) {
 		return { ok: false, message: '숫자만 입력할 수 있습니다.' };
 	}
 
@@ -76,6 +99,9 @@ function parseInput(input: ValuationBandInput):
 		operatingProfitMax: Number(trimmed.operatingProfitMax),
 		perMin: Number(trimmed.perMin),
 		perMax: Number(trimmed.perMax),
+		...(trimmed.totalShares.length > 0
+			? { totalShares: Number(trimmed.totalShares) }
+			: {}),
 	};
 
 	if (Object.values(parsed).some((value) => value <= 0)) {
@@ -96,4 +122,8 @@ function formatNumber(value: number): string {
 	return value.toLocaleString('en-US', {
 		maximumFractionDigits: 10,
 	});
+}
+
+function formatPrice(value: number): string {
+	return Math.round(value).toLocaleString('en-US');
 }

@@ -1,92 +1,50 @@
-# Obsidian Sample Plugin
+# Stock Valuation Band
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Obsidian 문서 안에 주식 가치 밴드 계산기를 삽입하는 플러그인입니다.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+## 사용법
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
+리본의 계산기 아이콘을 선택하거나 명령 팔레트에서 **주식 가치 밴드 계산기 삽입**을 실행하면 현재 커서 위치에 아래와 같은 코드블럭이 삽입됩니다.
 
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+````markdown
+```stock-valuation
+guid: 23b625b5-0d86-45f5-a11f-10c7cddef698
+```
+````
 
-## First time developing plugins?
+Reading view에서 이 코드블럭은 인터랙티브 계산기로 렌더링됩니다. 당기순이익은 `억` 단위로, 현재 주가는 `원` 단위로 입력합니다.
 
-Quick starting guide for new plugin devs:
+- 당기순이익과 PER은 최소값과 최대값을 직접 입력합니다.
+- 중간값은 1% 단위 슬라이더로 조정합니다.
+- 총 주식 수를 입력하면 예상 주가가 계산됩니다.
+- 현재 주가까지 입력하면 현재가 대비 예상 여력이 계산됩니다.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `src/main.ts` to `main.js`.
-- Make changes to `src/main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+코드블럭에는 `guid`만 저장됩니다. 실제 입력 데이터는 플러그인 데이터 저장소에 `guid` 기준으로 저장됩니다. 여러 문서에서 같은 `guid`를 사용하면 같은 계산 데이터를 공유합니다.
 
-## Releasing new releases
+**결과 복사**를 선택하면 계산 결과 텍스트가 클립보드에 복사됩니다.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+## 개발
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+의존성을 설치합니다.
 
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v18 (`node --version`).
-- `npm i` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code.
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-	"fundingUrl": "https://buymeacoffee.com"
-}
+```bash
+npm install
 ```
 
-If you have multiple URLs, you can also do:
+개발 빌드를 실행합니다.
 
-```json
-{
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com",
-		"GitHub Sponsor": "https://github.com/sponsors",
-		"Patreon": "https://www.patreon.com/"
-	}
-}
+```bash
+npm run dev
 ```
 
-## API Documentation
+프로덕션 빌드를 실행합니다.
 
-See https://docs.obsidian.md
+```bash
+npm run build
+```
+
+린트를 실행합니다.
+
+```bash
+npm run lint
+```

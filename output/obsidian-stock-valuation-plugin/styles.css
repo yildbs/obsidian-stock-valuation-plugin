@@ -1,32 +1,47 @@
-.stock-valuation-draggable-modal {
-	cursor: move;
+.stock-valuation-block {
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
 }
 
-.stock-valuation-modal-title {
-	cursor: move;
-	user-select: none;
+.stock-valuation-block-header {
+	display: flex;
+	gap: 8px;
+	align-items: baseline;
+	justify-content: space-between;
+	margin-bottom: 10px;
 }
 
-.stock-valuation-draggable-modal input,
-.stock-valuation-draggable-modal button,
-.stock-valuation-draggable-modal textarea,
-.stock-valuation-draggable-modal select {
-	cursor: auto;
+.stock-valuation-block-header h4 {
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
 }
 
-.modal.stock-valuation-modal-dragging {
-	user-select: none;
+.stock-valuation-guid {
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
-.stock-valuation-input-table {
+.stock-valuation-input-table,
+.stock-valuation-result-table {
 	width: 100%;
-	margin: 1em 0;
 	border-collapse: collapse;
 	table-layout: fixed;
 }
 
+.stock-valuation-input-table {
+	margin: 8px 0 12px;
+}
+
 .stock-valuation-input-table th,
-.stock-valuation-input-table td {
+.stock-valuation-input-table td,
+.stock-valuation-result-table th,
+.stock-valuation-result-table td {
 	padding: 6px;
 	text-align: left;
 	vertical-align: middle;
@@ -38,14 +53,87 @@
 	font-weight: var(--font-semibold);
 }
 
-.stock-valuation-input-table tbody th {
-	width: 28%;
+.stock-valuation-input-table tbody th,
+.stock-valuation-result-table th {
+	width: 24%;
 	color: var(--text-normal);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-medium);
 }
 
-.stock-valuation-input-table input {
+.stock-valuation-input-table input[type='number'] {
 	width: 100%;
 	min-width: 0;
+}
+
+.stock-valuation-slider-cell {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.stock-valuation-slider-cell input[type='range'] {
+	width: 100%;
+	margin: 0;
+}
+
+.stock-valuation-mid-value,
+.stock-valuation-message {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.stock-valuation-optional-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.stock-valuation-field {
+	display: grid;
+	gap: 4px;
+}
+
+.stock-valuation-field label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.stock-valuation-field input {
+	width: 100%;
+	min-width: 0;
+}
+
+.stock-valuation-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: 10px;
+}
+
+.stock-valuation-result {
+	overflow-x: auto;
+}
+
+.stock-valuation-result-table {
+	font-size: var(--font-ui-small);
+}
+
+.stock-valuation-result-table th,
+.stock-valuation-result-table td {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+@media (max-width: 700px) {
+	.stock-valuation-block-header {
+		display: block;
+	}
+
+	.stock-valuation-input-table {
+		table-layout: auto;
+	}
+
+	.stock-valuation-optional-grid {
+		grid-template-columns: 1fr;
+	}
 }

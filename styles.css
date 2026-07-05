@@ -1,8 +1,31 @@
-/*
+.stock-valuation-input-table {
+	width: 100%;
+	margin: 1em 0;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.stock-valuation-input-table th,
+.stock-valuation-input-table td {
+	padding: 6px;
+	text-align: left;
+	vertical-align: middle;
+}
 
-If your plugin does not need CSS, delete this file.
+.stock-valuation-input-table thead th {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
 
-*/
+.stock-valuation-input-table tbody th {
+	width: 28%;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-medium);
+}
+
+.stock-valuation-input-table input {
+	width: 100%;
+	min-width: 0;
+}

@@ -195,7 +195,7 @@ function interpolate(min: number, max: number, percent: number): number {
 
 function createResultText(values: ValuationBandValues): string {
 	const lines = [
-		`예상 당기순이익: ${formatNumber(values.operatingProfitMin)}억 ~ ${formatNumber(values.operatingProfitMid)}억 ~ ${formatNumber(values.operatingProfitMax)}억`,
+		`예상 연간 순이익: ${formatNumber(values.operatingProfitMin)}억 ~ ${formatNumber(values.operatingProfitMid)}억 ~ ${formatNumber(values.operatingProfitMax)}억`,
 		`예상 PER: ${formatNumber(values.perMin)} ~ ${formatNumber(values.perMid)} ~ ${formatNumber(values.perMax)}`,
 		`예상 시가총액: ${formatNumber(values.marketCapMin)}억 ~ ${formatNumber(values.marketCapMid)}억 ~ ${formatNumber(values.marketCapMax)}억`,
 	];

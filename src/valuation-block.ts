@@ -109,7 +109,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 
 		const tbodyEl = tableEl.createEl('tbody');
 		this.addRangeRow(tbodyEl, {
-			label: '당기순이익 (억)',
+			label: '예상 연간 순이익 (억)',
 			minKey: 'operatingProfitMin',
 			percentKey: 'operatingProfitMidPercent',
 			maxKey: 'operatingProfitMax',
@@ -378,7 +378,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			cls: 'stock-valuation-result-table',
 		});
 		const tbodyEl = tableEl.createEl('tbody');
-		this.addResultRow(tbodyEl, '당기순이익', [
+		this.addResultRow(tbodyEl, '예상 연간 순이익', [
 			`${formatNumber(values.operatingProfitMin)}억`,
 			`${formatNumber(values.operatingProfitMid)}억`,
 			`${formatNumber(values.operatingProfitMax)}억`,

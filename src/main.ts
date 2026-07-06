@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin } from 'obsidian';
+import { MarkdownView, Notice, parseYaml, Plugin, TFile } from 'obsidian';
 import {
 	DEFAULT_VALUATION_INPUT,
 	ValuationBandInput,
@@ -7,6 +7,7 @@ import {
 	ValuationBlockHost,
 	ValuationBlockRenderer,
 } from './valuation-block';
+import { fetchLivePrice, LivePriceResult } from './live-price';
 
 interface StockValuationPluginData {
 	valuations: Record<string, ValuationBandInput>;
@@ -61,16 +62,24 @@ export default class StockValuationPlugin
 				}
 
 				this.ensureValuationInput(guid);
-				ctx.addChild(new ValuationBlockRenderer(el, guid, this));
+				ctx.addChild(
+					new ValuationBlockRenderer(
+						el,
+						guid,
+						ctx.sourcePath,
+						ctx.frontmatter,
+						this,
+					),
+				);
 			},
 		);
 	}
 
-	async onunload(): Promise<void> {
+	onunload(): void {
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
-			await this.saveData(this.data);
+			void this.saveData(this.data);
 		}
 	}
 
@@ -106,6 +115,58 @@ export default class StockValuationPlugin
 				this.listeners.delete(guid);
 			}
 		};
+	}
+
+	async getLivePrice(
+		sourcePath: string,
+		initialFrontmatter: unknown,
+		forceRefresh: boolean,
+	): Promise<LivePriceResult> {
+		const frontmatter = await this.resolveFrontmatter(
+			sourcePath,
+			initialFrontmatter,
+		);
+
+		return fetchLivePrice(frontmatter, forceRefresh);
+	}
+
+	private async resolveFrontmatter(
+		sourcePath: string,
+		initialFrontmatter: unknown,
+	): Promise<unknown> {
+		if (hasFrontmatterFields(initialFrontmatter)) {
+			return initialFrontmatter;
+		}
+
+		const cachedFrontmatter =
+			this.app.metadataCache.getCache(sourcePath)?.frontmatter;
+		if (hasFrontmatterFields(cachedFrontmatter)) {
+			return cachedFrontmatter;
+		}
+
+		const activeFile = this.app.workspace.getActiveFile();
+		const activeFrontmatter =
+			activeFile !== null
+				? this.app.metadataCache.getFileCache(activeFile)?.frontmatter
+				: null;
+		if (hasFrontmatterFields(activeFrontmatter)) {
+			return activeFrontmatter;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile)) {
+			return initialFrontmatter;
+		}
+
+		const text = await this.app.vault.cachedRead(file);
+		const frontmatterText = extractFrontmatterText(text);
+		if (frontmatterText === null) {
+			return initialFrontmatter;
+		}
+
+		const parsed: unknown = parseYaml(frontmatterText);
+
+		return parsed;
 	}
 
 	private async loadPluginData(): Promise<void> {
@@ -202,6 +263,10 @@ function normalizeValuationInput(input: unknown): ValuationBandInput {
 			typeof candidate.currentPrice === 'string'
 				? candidate.currentPrice
 				: DEFAULT_VALUATION_INPUT.currentPrice,
+		useLivePrice:
+			typeof candidate.useLivePrice === 'boolean'
+				? candidate.useLivePrice
+				: DEFAULT_VALUATION_INPUT.useLivePrice,
 	};
 }
 
@@ -215,6 +280,20 @@ function normalizePercent(value: unknown): number {
 
 function parseGuid(source: string): string | null {
 	const match = source.match(/^\s*guid\s*:\s*([^\s]+)\s*$/m);
+
+	return match?.[1] ?? null;
+}
+
+function hasFrontmatterFields(value: unknown): boolean {
+	if (value === null || typeof value !== 'object') {
+		return false;
+	}
+
+	return 'symbol' in value || 'market' in value;
+}
+
+function extractFrontmatterText(text: string): string | null {
+	const match = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
 
 	return match?.[1] ?? null;
 }

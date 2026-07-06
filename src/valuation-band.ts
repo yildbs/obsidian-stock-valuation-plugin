@@ -7,6 +7,7 @@ export interface ValuationBandInput {
 	perMidPercent: number;
 	totalShares: string;
 	currentPrice: string;
+	useLivePrice: boolean;
 }
 
 export interface ValuationBandValues {
@@ -51,6 +52,7 @@ export const DEFAULT_VALUATION_INPUT: ValuationBandInput = {
 	perMidPercent: 50,
 	totalShares: '',
 	currentPrice: '',
+	useLivePrice: false,
 };
 
 export function createValuationBandText(

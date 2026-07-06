@@ -1,4 +1,5 @@
-import { MarkdownRenderChild, Notice } from 'obsidian';
+import { MarkdownRenderChild, Notice, setIcon } from 'obsidian';
+import { formatLivePriceTime, LivePriceResult } from './live-price';
 import {
 	calculateValuationBand,
 	createValuationBandText,
@@ -8,10 +9,13 @@ import {
 	ValuationBandInput,
 } from './valuation-band';
 
-type TextValuationInputKey = Exclude<
-	keyof ValuationBandInput,
-	'operatingProfitMidPercent' | 'perMidPercent'
->;
+type TextValuationInputKey =
+	| 'operatingProfitMin'
+	| 'operatingProfitMax'
+	| 'perMin'
+	| 'perMax'
+	| 'totalShares'
+	| 'currentPrice';
 type PercentValuationInputKey =
 	| 'operatingProfitMidPercent'
 	| 'perMidPercent';
@@ -27,6 +31,11 @@ export interface ValuationBlockHost {
 		guid: string,
 		listener: (sourceId?: string) => void,
 	): () => void;
+	getLivePrice(
+		sourcePath: string,
+		initialFrontmatter: unknown,
+		forceRefresh: boolean,
+	): Promise<LivePriceResult>;
 }
 
 const COPY_SUCCESS_MESSAGE = '계산 결과를 클립보드에 복사했습니다.';
@@ -39,11 +48,18 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	private copyButtonEl: HTMLButtonElement | null = null;
 	private operatingProfitMidEl: HTMLElement | null = null;
 	private perMidEl: HTMLElement | null = null;
+	private livePriceCheckboxEl: HTMLInputElement | null = null;
+	private livePriceRefreshButtonEl: HTMLButtonElement | null = null;
+	private livePriceStatusEl: HTMLElement | null = null;
+	private currentPriceInputEl: HTMLInputElement | null = null;
+	private livePriceRequestId = 0;
 	private inputEls = new Map<keyof ValuationBandInput, HTMLInputElement>();
 
 	constructor(
 		containerEl: HTMLElement,
 		private readonly guid: string,
+		private readonly sourcePath: string,
+		private readonly initialFrontmatter: unknown,
 		private readonly host: ValuationBlockHost,
 	) {
 		super(containerEl);
@@ -117,15 +133,25 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			cls: 'stock-valuation-optional-grid',
 		});
 		this.addNumberField(optionalEl, '총 주식 수', 'totalShares', input);
-		this.addNumberField(optionalEl, '현재 주가 (원)', 'currentPrice', input);
+		this.currentPriceInputEl = this.addCurrentPriceField(
+			optionalEl,
+			'현재 주가 (원)',
+			input,
+		);
+		this.addLivePriceControls();
 
 		const actionsEl = this.containerEl.createDiv({
 			cls: 'stock-valuation-actions',
 		});
 		this.copyButtonEl = actionsEl.createEl('button', {
-			text: '결과 복사',
-			cls: 'mod-cta',
+			cls: 'stock-valuation-copy-button clickable-icon',
+			attr: {
+				type: 'button',
+				'aria-label': '결과 복사',
+				title: '결과 복사',
+			},
 		});
+		setIcon(this.copyButtonEl, 'copy');
 		this.copyButtonEl.addEventListener('click', () => {
 			void this.copyResult();
 		});
@@ -192,19 +218,43 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		label: string,
 		key: TextValuationInputKey,
 		input: ValuationBandInput,
-	): void {
+	): HTMLInputElement {
 		const fieldEl = containerEl.createDiv({
 			cls: 'stock-valuation-field',
 		});
 		fieldEl.createEl('label', { text: label });
-		this.addNumberInput(fieldEl, key, input);
+		const inputRowEl = fieldEl.createDiv({
+			cls: 'stock-valuation-input-row',
+		});
+
+		return this.addNumberInput(inputRowEl, key, input);
+	}
+
+	private addCurrentPriceField(
+		containerEl: HTMLElement,
+		label: string,
+		input: ValuationBandInput,
+	): HTMLInputElement {
+		const fieldEl = containerEl.createDiv({
+			cls: 'stock-valuation-field',
+		});
+		fieldEl.createEl('label', { text: label });
+		const inputRowEl = fieldEl.createDiv({
+			cls: 'stock-valuation-current-price-row',
+		});
+		const inputEl = this.addNumberInput(inputRowEl, 'currentPrice', input);
+		this.livePriceStatusEl = inputRowEl.createDiv({
+			cls: 'stock-valuation-live-price-status',
+		});
+
+		return inputEl;
 	}
 
 	private addNumberInput(
 		containerEl: HTMLElement,
 		key: TextValuationInputKey,
 		input: ValuationBandInput,
-	): void {
+	): HTMLInputElement {
 		const inputEl = containerEl.createEl('input', {
 			attr: {
 				type: 'number',
@@ -224,6 +274,47 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			);
 			this.updateCalculatedView();
 		});
+
+		return inputEl;
+	}
+
+	private addLivePriceControls(): void {
+		const livePriceEl = this.containerEl.createDiv({
+			cls: 'stock-valuation-live-price',
+		});
+		const labelEl = livePriceEl.createEl('label', {
+			cls: 'stock-valuation-live-price-toggle',
+		});
+		this.livePriceCheckboxEl = labelEl.createEl('input', {
+			attr: {
+				type: 'checkbox',
+			},
+		});
+		this.livePriceCheckboxEl.checked =
+			this.host.getValuationInput(this.guid).useLivePrice;
+		labelEl.createSpan({ text: '실시간 현재가 사용 (약 20분 지연)' });
+		this.livePriceCheckboxEl.addEventListener('change', () => {
+			const useLivePrice = this.livePriceCheckboxEl?.checked ?? false;
+			this.host.updateValuationInput(
+				this.guid,
+				{ useLivePrice },
+				this.instanceId,
+			);
+			this.updateCalculatedView(useLivePrice);
+		});
+
+		this.livePriceRefreshButtonEl = livePriceEl.createEl('button', {
+			cls: 'stock-valuation-refresh-button clickable-icon',
+			attr: {
+				type: 'button',
+				'aria-label': '현재가 새로고침',
+				title: '현재가 새로고침',
+			},
+		});
+		setIcon(this.livePriceRefreshButtonEl, 'refresh-cw');
+		this.livePriceRefreshButtonEl.addEventListener('click', () => {
+			this.updateCalculatedView(true);
+		});
 	}
 
 	private syncControls(): void {
@@ -232,16 +323,44 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		for (const [key, inputEl] of this.inputEls) {
 			inputEl.value = String(input[key]);
 		}
+		this.syncLivePriceControls(input);
 	}
 
-	private updateCalculatedView(): void {
+	private updateCalculatedView(forceRefresh = false): void {
 		this.updateMidpointLabels();
+		const requestId = ++this.livePriceRequestId;
+
+		void this.updateCalculatedViewAsync(requestId, forceRefresh);
+	}
+
+	private async updateCalculatedViewAsync(
+		requestId: number,
+		forceRefresh: boolean,
+	): Promise<void> {
+		const input = this.host.getValuationInput(this.guid);
+		const calculationInput = { ...input };
+		this.syncLivePriceControls(input);
+
+		if (input.useLivePrice) {
+			this.setLivePriceStatus('조회 중...');
+			const livePrice = await this.host.getLivePrice(
+				this.sourcePath,
+				this.initialFrontmatter,
+				forceRefresh,
+			);
+			if (requestId !== this.livePriceRequestId) {
+				return;
+			}
+			this.applyLivePrice(calculationInput, livePrice);
+		} else {
+			this.setLivePriceStatus('');
+		}
 
 		if (this.resultEl === null || this.copyButtonEl === null) {
 			return;
 		}
 
-		const result = calculateValuationBand(this.host.getValuationInput(this.guid));
+		const result = calculateValuationBand(calculationInput);
 		this.resultEl.empty();
 
 		if (!result.ok) {
@@ -280,6 +399,17 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			values.priceMid !== undefined &&
 			values.priceMax !== undefined
 		) {
+			this.addResultRow(tbodyEl, '현재 주가', [
+				values.currentPrice !== undefined
+					? `${formatPrice(values.currentPrice)}원`
+					: '-',
+				values.currentPrice !== undefined
+					? `${formatPrice(values.currentPrice)}원`
+					: '-',
+				values.currentPrice !== undefined
+					? `${formatPrice(values.currentPrice)}원`
+					: '-',
+			]);
 			this.addResultRow(tbodyEl, '예상 주가', [
 				`${formatPrice(values.priceMin)}원`,
 				`${formatPrice(values.priceMid)}원`,
@@ -355,7 +485,8 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	}
 
 	private async copyResult(): Promise<void> {
-		const result = createValuationBandText(this.host.getValuationInput(this.guid));
+		const calculationInput = await this.getCalculationInput(false);
+		const result = createValuationBandText(calculationInput);
 		if (!result.ok) {
 			new Notice(result.message);
 			return;
@@ -363,6 +494,70 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 
 		await navigator.clipboard.writeText(result.text);
 		new Notice(COPY_SUCCESS_MESSAGE);
+	}
+
+	private async getCalculationInput(
+		forceRefresh: boolean,
+	): Promise<ValuationBandInput> {
+		const input = this.host.getValuationInput(this.guid);
+		const calculationInput = { ...input };
+		if (!input.useLivePrice) {
+			return calculationInput;
+		}
+
+		const livePrice = await this.host.getLivePrice(
+			this.sourcePath,
+			this.initialFrontmatter,
+			forceRefresh,
+		);
+		this.applyLivePrice(calculationInput, livePrice);
+
+		return calculationInput;
+	}
+
+	private applyLivePrice(
+		input: ValuationBandInput,
+		livePrice: LivePriceResult,
+	): void {
+		if (!livePrice.ok || livePrice.price === null) {
+			this.setLivePriceStatus(livePrice.message);
+			return;
+		}
+
+		input.currentPrice = String(livePrice.price);
+		if (this.currentPriceInputEl !== null) {
+			this.currentPriceInputEl.value = String(livePrice.price);
+		}
+		const timeText = formatLivePriceTime(livePrice.marketTimeSec);
+		this.setLivePriceStatus(
+			`${livePrice.yahooSymbol ?? ''}${
+				timeText.length > 0 ? ` ${timeText}` : ''
+			}`,
+		);
+	}
+
+	private syncLivePriceControls(input: ValuationBandInput): void {
+		if (this.livePriceCheckboxEl !== null) {
+			this.livePriceCheckboxEl.checked = input.useLivePrice;
+		}
+		if (this.currentPriceInputEl !== null) {
+			this.currentPriceInputEl.disabled = input.useLivePrice;
+		}
+		if (this.livePriceRefreshButtonEl !== null) {
+			this.livePriceRefreshButtonEl.disabled = !input.useLivePrice;
+		}
+	}
+
+	private setLivePriceStatus(message: string): void {
+		if (this.livePriceStatusEl === null) {
+			return;
+		}
+
+		this.livePriceStatusEl.setText(message);
+		this.livePriceStatusEl.toggleClass(
+			'stock-valuation-live-price-status-empty',
+			message.length === 0,
+		);
 	}
 }
 

@@ -138,7 +138,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			'현재 주가 (원)',
 			input,
 		);
-		this.addLivePriceControls();
+		this.addLivePriceColumn(optionalEl);
 
 		const actionsEl = this.containerEl.createDiv({
 			cls: 'stock-valuation-actions',
@@ -222,7 +222,10 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		const fieldEl = containerEl.createDiv({
 			cls: 'stock-valuation-field',
 		});
-		fieldEl.createEl('label', { text: label });
+		const labelRowEl = fieldEl.createDiv({
+			cls: 'stock-valuation-field-label-row',
+		});
+		labelRowEl.createEl('label', { text: label });
 		const inputRowEl = fieldEl.createDiv({
 			cls: 'stock-valuation-input-row',
 		});
@@ -238,14 +241,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		const fieldEl = containerEl.createDiv({
 			cls: 'stock-valuation-field',
 		});
-		fieldEl.createEl('label', { text: label });
+		const labelRowEl = fieldEl.createDiv({
+			cls: 'stock-valuation-field-label-row',
+		});
+		labelRowEl.createEl('label', { text: label });
 		const inputRowEl = fieldEl.createDiv({
 			cls: 'stock-valuation-current-price-row',
 		});
 		const inputEl = this.addNumberInput(inputRowEl, 'currentPrice', input);
-		this.livePriceStatusEl = inputRowEl.createDiv({
-			cls: 'stock-valuation-live-price-status',
-		});
 
 		return inputEl;
 	}
@@ -278,12 +281,25 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		return inputEl;
 	}
 
-	private addLivePriceControls(): void {
-		const livePriceEl = this.containerEl.createDiv({
+	private addLivePriceColumn(containerEl: HTMLElement): void {
+		const columnEl = containerEl.createDiv({
+			cls: 'stock-valuation-live-price-column',
+		});
+		this.addLivePriceControls(columnEl);
+		this.livePriceStatusEl = columnEl.createDiv({
+			cls: 'stock-valuation-live-price-status',
+		});
+	}
+
+	private addLivePriceControls(containerEl: HTMLElement): void {
+		const livePriceEl = containerEl.createDiv({
 			cls: 'stock-valuation-live-price',
 		});
 		const labelEl = livePriceEl.createEl('label', {
 			cls: 'stock-valuation-live-price-toggle',
+			attr: {
+				title: 'Yahoo finance 현재가를 사용합니다. 약 20분 지연될 수 있습니다.',
+			},
 		});
 		this.livePriceCheckboxEl = labelEl.createEl('input', {
 			attr: {
@@ -292,7 +308,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		});
 		this.livePriceCheckboxEl.checked =
 			this.host.getValuationInput(this.guid).useLivePrice;
-		labelEl.createSpan({ text: '실시간 현재가 사용 (약 20분 지연)' });
+		labelEl.createSpan({ text: '실시간 사용' });
 		this.livePriceCheckboxEl.addEventListener('change', () => {
 			const useLivePrice = this.livePriceCheckboxEl?.checked ?? false;
 			this.host.updateValuationInput(

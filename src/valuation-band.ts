@@ -173,7 +173,7 @@ export function calculateValuationBand(
 
 export function formatNumber(value: number): string {
 	return value.toLocaleString('en-US', {
-		maximumFractionDigits: 10,
+		maximumFractionDigits: 1,
 	});
 }
 

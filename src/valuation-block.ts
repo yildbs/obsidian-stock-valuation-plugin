@@ -48,6 +48,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	private copyButtonEl: HTMLButtonElement | null = null;
 	private operatingProfitMidEl: HTMLElement | null = null;
 	private perMidEl: HTMLElement | null = null;
+	private lockMidMarketCapCheckboxEl: HTMLInputElement | null = null;
 	private livePriceCheckboxEl: HTMLInputElement | null = null;
 	private livePriceRefreshButtonEl: HTMLButtonElement | null = null;
 	private livePriceStatusEl: HTMLElement | null = null;
@@ -104,7 +105,12 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		const headerRowEl = theadEl.createEl('tr');
 		headerRowEl.createEl('th');
 		headerRowEl.createEl('th', { text: '최소' });
-		headerRowEl.createEl('th', { text: '중간' });
+		const midpointHeaderEl = headerRowEl.createEl('th');
+		const midpointHeaderContentEl = midpointHeaderEl.createDiv({
+			cls: 'stock-valuation-midpoint-header',
+		});
+		midpointHeaderContentEl.createSpan({ text: '중간' });
+		this.addMidMarketCapLockControl(midpointHeaderContentEl);
 		headerRowEl.createEl('th', { text: '최대' });
 
 		const tbodyEl = tableEl.createEl('tbody');
@@ -195,13 +201,13 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		this.inputEls.set(options.percentKey, sliderEl);
 		sliderEl.addEventListener('input', () => {
 			const percent = Number(sliderEl.value);
-			const patch: Partial<ValuationBandInput> = {};
-			patch[options.percentKey] = percent;
+			const patch = this.createSliderPatch(options.percentKey, percent);
 			this.host.updateValuationInput(
 				this.guid,
 				patch,
 				this.instanceId,
 			);
+			this.syncControls();
 			this.updateCalculatedView();
 		});
 		const valueEl = sliderWrapEl.createDiv({
@@ -211,6 +217,39 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 
 		const maxCellEl = rowEl.createEl('td');
 		this.addNumberInput(maxCellEl, options.maxKey, options.input);
+	}
+
+	private addMidMarketCapLockControl(containerEl: HTMLElement): void {
+		const labelEl = containerEl.createEl('label', {
+			cls: 'stock-valuation-mid-lock-toggle',
+			attr: {
+				title: '중간 시가총액을 고정합니다.',
+			},
+		});
+		this.lockMidMarketCapCheckboxEl = labelEl.createEl('input', {
+			attr: {
+				type: 'checkbox',
+			},
+		});
+		this.lockMidMarketCapCheckboxEl.checked =
+			this.host.getValuationInput(this.guid).lockMidMarketCap;
+		labelEl.createSpan({ text: '시총 고정' });
+		this.lockMidMarketCapCheckboxEl.addEventListener('change', () => {
+			const lockMidMarketCap =
+				this.lockMidMarketCapCheckboxEl?.checked ?? false;
+			const currentInput = this.host.getValuationInput(this.guid);
+			this.host.updateValuationInput(
+				this.guid,
+				{
+					lockMidMarketCap,
+					lockedMidMarketCap: lockMidMarketCap
+						? calculateMidMarketCap(currentInput)
+						: null,
+				},
+				this.instanceId,
+			);
+			this.updateCalculatedView();
+		});
 	}
 
 	private addNumberField(
@@ -270,6 +309,12 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		inputEl.addEventListener('input', () => {
 			const patch: Partial<ValuationBandInput> = {};
 			patch[key] = inputEl.value;
+			if (isRangeBoundKey(key)) {
+				patch.lockedMidMarketCap = calculateMidMarketCap({
+					...this.host.getValuationInput(this.guid),
+					...patch,
+				});
+			}
 			this.host.updateValuationInput(
 				this.guid,
 				patch,
@@ -279,6 +324,34 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		});
 
 		return inputEl;
+	}
+
+	private createSliderPatch(
+		changedKey: PercentValuationInputKey,
+		changedPercent: number,
+	): Partial<ValuationBandInput> {
+		const input = this.host.getValuationInput(this.guid);
+		if (!input.lockMidMarketCap) {
+			return { [changedKey]: changedPercent };
+		}
+
+		const lockedMidMarketCap =
+			input.lockedMidMarketCap ?? calculateMidMarketCap(input);
+		if (lockedMidMarketCap === null) {
+			return { [changedKey]: changedPercent };
+		}
+
+		const adjusted = adjustLockedMidMarketCap(
+			input,
+			changedKey,
+			changedPercent,
+			lockedMidMarketCap,
+		);
+
+		return {
+			...adjusted,
+			lockedMidMarketCap,
+		};
 	}
 
 	private addLivePriceColumn(containerEl: HTMLElement): void {
@@ -338,6 +411,9 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 
 		for (const [key, inputEl] of this.inputEls) {
 			inputEl.value = String(input[key]);
+		}
+		if (this.lockMidMarketCapCheckboxEl !== null) {
+			this.lockMidMarketCapCheckboxEl.checked = input.lockMidMarketCap;
 		}
 		this.syncLivePriceControls(input);
 	}
@@ -592,6 +668,140 @@ function parsePositiveNumber(value: string): number | null {
 	}
 
 	return parsed;
+}
+
+function isRangeBoundKey(key: TextValuationInputKey): boolean {
+	return (
+		key === 'operatingProfitMin' ||
+		key === 'operatingProfitMax' ||
+		key === 'perMin' ||
+		key === 'perMax'
+	);
+}
+
+function adjustLockedMidMarketCap(
+	input: ValuationBandInput,
+	changedKey: PercentValuationInputKey,
+	changedPercent: number,
+	lockedMidMarketCap: number,
+): Partial<ValuationBandInput> {
+	const ranges = parseMidpointRanges(input);
+	if (ranges === null || lockedMidMarketCap <= 0) {
+		return { [changedKey]: changedPercent };
+	}
+
+	if (changedKey === 'perMidPercent') {
+		const perPercent = clampPercent(changedPercent);
+		const per = valueFromPercent(ranges.perMin, ranges.perMax, perPercent);
+		const requiredProfit = lockedMidMarketCap / per;
+		const profit = clamp(
+			requiredProfit,
+			ranges.profitMin,
+			ranges.profitMax,
+		);
+		const operatingProfitMidPercent = percentFromValue(
+			ranges.profitMin,
+			ranges.profitMax,
+			profit,
+		);
+		const adjustedPer = lockedMidMarketCap / profit;
+		const perMidPercent = percentFromValue(
+			ranges.perMin,
+			ranges.perMax,
+			adjustedPer,
+		);
+
+		return {
+			perMidPercent,
+			operatingProfitMidPercent,
+		};
+	}
+
+	const operatingProfitMidPercent = clampPercent(changedPercent);
+	const profit = valueFromPercent(
+		ranges.profitMin,
+		ranges.profitMax,
+		operatingProfitMidPercent,
+	);
+	const requiredPer = lockedMidMarketCap / profit;
+	const per = clamp(requiredPer, ranges.perMin, ranges.perMax);
+	const perMidPercent = percentFromValue(ranges.perMin, ranges.perMax, per);
+	const adjustedProfit = lockedMidMarketCap / per;
+
+	return {
+		operatingProfitMidPercent: percentFromValue(
+			ranges.profitMin,
+			ranges.profitMax,
+			adjustedProfit,
+		),
+		perMidPercent,
+	};
+}
+
+function calculateMidMarketCap(input: ValuationBandInput): number | null {
+	const ranges = parseMidpointRanges(input);
+	if (ranges === null) {
+		return null;
+	}
+
+	const profit = valueFromPercent(
+		ranges.profitMin,
+		ranges.profitMax,
+		input.operatingProfitMidPercent,
+	);
+	const per = valueFromPercent(ranges.perMin, ranges.perMax, input.perMidPercent);
+
+	return profit * per;
+}
+
+function parseMidpointRanges(input: ValuationBandInput): {
+	profitMin: number;
+	profitMax: number;
+	perMin: number;
+	perMax: number;
+} | null {
+	const profitMin = parsePositiveNumber(input.operatingProfitMin);
+	const profitMax = parsePositiveNumber(input.operatingProfitMax);
+	const perMin = parsePositiveNumber(input.perMin);
+	const perMax = parsePositiveNumber(input.perMax);
+
+	if (
+		profitMin === null ||
+		profitMax === null ||
+		perMin === null ||
+		perMax === null ||
+		profitMin > profitMax ||
+		perMin > perMax
+	) {
+		return null;
+	}
+
+	return {
+		profitMin,
+		profitMax,
+		perMin,
+		perMax,
+	};
+}
+
+function valueFromPercent(min: number, max: number, percent: number): number {
+	return min + (max - min) * (clampPercent(percent) / 100);
+}
+
+function percentFromValue(min: number, max: number, value: number): number {
+	if (min === max) {
+		return 0;
+	}
+
+	return clampPercent(((value - min) / (max - min)) * 100);
+}
+
+function clampPercent(value: number): number {
+	return clamp(Math.round(value), 0, 100);
+}
+
+function clamp(value: number, min: number, max: number): number {
+	return Math.min(Math.max(value, min), max);
 }
 
 function createInstanceId(): string {

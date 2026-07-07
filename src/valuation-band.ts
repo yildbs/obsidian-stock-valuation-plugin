@@ -8,6 +8,8 @@ export interface ValuationBandInput {
 	totalShares: string;
 	currentPrice: string;
 	useLivePrice: boolean;
+	lockMidMarketCap: boolean;
+	lockedMidMarketCap: number | null;
 }
 
 export interface ValuationBandValues {
@@ -53,6 +55,8 @@ export const DEFAULT_VALUATION_INPUT: ValuationBandInput = {
 	totalShares: '',
 	currentPrice: '',
 	useLivePrice: false,
+	lockMidMarketCap: false,
+	lockedMidMarketCap: null,
 };
 
 export function createValuationBandText(

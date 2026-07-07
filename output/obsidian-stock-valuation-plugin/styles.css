@@ -56,6 +56,26 @@
 	font-weight: var(--font-semibold);
 }
 
+.stock-valuation-midpoint-header,
+.stock-valuation-mid-lock-toggle {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	white-space: nowrap;
+}
+
+.stock-valuation-mid-lock-toggle {
+	color: var(--text-normal);
+	font-weight: var(--font-normal);
+}
+
+.stock-valuation-mid-lock-toggle input {
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	margin: 0;
+}
+
 .stock-valuation-input-table tbody th,
 .stock-valuation-result-table th {
 	width: 8.5rem;

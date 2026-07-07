@@ -267,6 +267,15 @@ function normalizeValuationInput(input: unknown): ValuationBandInput {
 			typeof candidate.useLivePrice === 'boolean'
 				? candidate.useLivePrice
 				: DEFAULT_VALUATION_INPUT.useLivePrice,
+		lockMidMarketCap:
+			typeof candidate.lockMidMarketCap === 'boolean'
+				? candidate.lockMidMarketCap
+				: DEFAULT_VALUATION_INPUT.lockMidMarketCap,
+		lockedMidMarketCap:
+			typeof candidate.lockedMidMarketCap === 'number' &&
+			Number.isFinite(candidate.lockedMidMarketCap)
+				? candidate.lockedMidMarketCap
+				: DEFAULT_VALUATION_INPUT.lockedMidMarketCap,
 	};
 }
 

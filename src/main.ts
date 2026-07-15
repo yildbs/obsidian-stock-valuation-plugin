@@ -8,13 +8,19 @@ import {
 	ValuationBlockRenderer,
 } from './valuation-block';
 import { fetchLivePrice, LivePriceResult } from './live-price';
+import {
+	normalizeValuationScenarios,
+	ValuationScenario,
+} from './valuation-scenario';
 
 interface StockValuationPluginData {
 	valuations: Record<string, ValuationBandInput>;
+	scenarios: Record<string, ValuationScenario[]>;
 }
 
 const DEFAULT_DATA: StockValuationPluginData = {
 	valuations: {},
+	scenarios: {},
 };
 const SAVE_DELAY_MS = 300;
 
@@ -101,6 +107,37 @@ export default class StockValuationPlugin
 		this.notifyValuationListeners(guid, sourceId);
 	}
 
+	getValuationScenarios(guid: string): ValuationScenario[] {
+		return (this.data.scenarios[guid] ?? []).map((scenario) => ({
+			...scenario,
+		}));
+	}
+
+	addValuationScenario(
+		guid: string,
+		scenario: ValuationScenario,
+		sourceId?: string,
+	): void {
+		this.data.scenarios[guid] = [
+			scenario,
+			...(this.data.scenarios[guid] ?? []),
+		];
+		this.scheduleSave();
+		this.notifyValuationListeners(guid, sourceId);
+	}
+
+	deleteValuationScenario(
+		guid: string,
+		scenarioId: string,
+		sourceId?: string,
+	): void {
+		this.data.scenarios[guid] = (this.data.scenarios[guid] ?? []).filter(
+			(scenario) => scenario.id !== scenarioId,
+		);
+		this.scheduleSave();
+		this.notifyValuationListeners(guid, sourceId);
+	}
+
 	subscribeValuation(
 		guid: string,
 		listener: (sourceId?: string) => void,
@@ -172,11 +209,18 @@ export default class StockValuationPlugin
 	private async loadPluginData(): Promise<void> {
 		const loaded = (await this.loadData()) as Partial<StockValuationPluginData> | null;
 		const valuations = loaded?.valuations ?? {};
+		const scenarios = loaded?.scenarios ?? {};
 		this.data = {
 			valuations: Object.fromEntries(
 				Object.entries(valuations).map(([guid, input]) => [
 					guid,
 					normalizeValuationInput(input),
+				]),
+			),
+			scenarios: Object.fromEntries(
+				Object.entries(scenarios).map(([guid, items]) => [
+					guid,
+					normalizeValuationScenarios(items),
 				]),
 			),
 		};

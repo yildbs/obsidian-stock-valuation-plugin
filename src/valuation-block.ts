@@ -8,6 +8,10 @@ import {
 	formatPrice,
 	ValuationBandInput,
 } from './valuation-band';
+import {
+	createValuationScenario,
+	ValuationScenario,
+} from './valuation-scenario';
 
 type TextValuationInputKey =
 	| 'operatingProfitMin'
@@ -19,12 +23,30 @@ type TextValuationInputKey =
 type PercentValuationInputKey =
 	| 'operatingProfitMidPercent'
 	| 'perMidPercent';
+type ScenarioSortKey =
+	| 'name'
+	| 'assumption'
+	| 'fairPrice'
+	| 'potentialPercent'
+	| 'createdAt';
+type SortDirection = 'ascending' | 'descending';
 
 export interface ValuationBlockHost {
 	getValuationInput(guid: string): ValuationBandInput;
 	updateValuationInput(
 		guid: string,
 		patch: Partial<ValuationBandInput>,
+		sourceId?: string,
+	): void;
+	getValuationScenarios(guid: string): ValuationScenario[];
+	addValuationScenario(
+		guid: string,
+		scenario: ValuationScenario,
+		sourceId?: string,
+	): void;
+	deleteValuationScenario(
+		guid: string,
+		scenarioId: string,
 		sourceId?: string,
 	): void;
 	subscribeValuation(
@@ -53,6 +75,13 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	private livePriceRefreshButtonEl: HTMLButtonElement | null = null;
 	private livePriceStatusEl: HTMLElement | null = null;
 	private currentPriceInputEl: HTMLInputElement | null = null;
+	private scenarioFormEl: HTMLElement | null = null;
+	private scenarioListEl: HTMLElement | null = null;
+	private scenarioFormRefresh: (() => void) | null = null;
+	private displayedCurrentPrice: number | null = null;
+	private livePriceLoading = false;
+	private scenarioSortKey: ScenarioSortKey = 'createdAt';
+	private scenarioSortDirection: SortDirection = 'descending';
 	private livePriceRequestId = 0;
 	private inputEls = new Map<keyof ValuationBandInput, HTMLInputElement>();
 
@@ -74,6 +103,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 
 			this.syncControls();
 			this.updateCalculatedView();
+			this.renderScenarioList();
 		});
 		this.render();
 	}
@@ -165,6 +195,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		this.resultEl = this.containerEl.createDiv({
 			cls: 'stock-valuation-result',
 		});
+		this.renderScenarioSection();
 		this.updateCalculatedView();
 	}
 
@@ -434,7 +465,10 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		this.syncLivePriceControls(input);
 
 		if (input.useLivePrice) {
+			this.livePriceLoading = true;
+			this.displayedCurrentPrice = null;
 			this.setLivePriceStatus('조회 중...');
+			this.scenarioFormRefresh?.();
 			const livePrice = await this.host.getLivePrice(
 				this.sourcePath,
 				this.initialFrontmatter,
@@ -443,10 +477,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			if (requestId !== this.livePriceRequestId) {
 				return;
 			}
+			this.livePriceLoading = false;
 			this.applyLivePrice(calculationInput, livePrice);
 		} else {
+			this.livePriceLoading = false;
+			this.displayedCurrentPrice = parsePositiveNumber(input.currentPrice);
 			this.setLivePriceStatus('');
 		}
+		this.scenarioFormRefresh?.();
 
 		if (this.resultEl === null || this.copyButtonEl === null) {
 			return;
@@ -463,6 +501,9 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			});
 			return;
 		}
+
+		this.displayedCurrentPrice = result.values.currentPrice ?? null;
+		this.scenarioFormRefresh?.();
 
 		this.copyButtonEl.disabled = false;
 		const values = result.values;
@@ -617,6 +658,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		}
 
 		input.currentPrice = String(livePrice.price);
+		this.displayedCurrentPrice = livePrice.price;
 		if (this.currentPriceInputEl !== null) {
 			this.currentPriceInputEl.value = String(livePrice.price);
 		}
@@ -651,6 +693,404 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			message.length === 0,
 		);
 	}
+
+	private renderScenarioSection(): void {
+		const sectionEl = this.containerEl.createDiv({
+			cls: 'stock-valuation-scenarios',
+		});
+		const headerEl = sectionEl.createDiv({
+			cls: 'stock-valuation-scenario-header',
+		});
+		headerEl.createEl('h5', { text: '시나리오' });
+		const addButtonEl = headerEl.createEl('button', {
+			text: '시나리오 추가',
+			attr: { type: 'button' },
+		});
+		this.scenarioFormEl = sectionEl.createDiv({
+			cls: 'stock-valuation-scenario-form-container',
+		});
+		this.scenarioFormEl.hide();
+		addButtonEl.addEventListener('click', () => {
+			if (this.scenarioFormEl?.isShown()) {
+				this.closeScenarioForm();
+				return;
+			}
+			this.openScenarioForm();
+		});
+
+		this.scenarioListEl = sectionEl.createDiv({
+			cls: 'stock-valuation-scenario-list',
+		});
+		this.renderScenarioList();
+	}
+
+	private openScenarioForm(): void {
+		if (this.scenarioFormEl === null) {
+			return;
+		}
+
+		this.scenarioFormEl.empty();
+		this.scenarioFormEl.show();
+		const input = this.host.getValuationInput(this.guid);
+		const nameEl = this.addScenarioTextField(
+			this.scenarioFormEl,
+			'시나리오 이름',
+			'예: 성장 유지하지만 멀티플 축소',
+		);
+		const descriptionEl = this.addScenarioTextField(
+			this.scenarioFormEl,
+			'가정 설명',
+			'선택 입력',
+		);
+		const numbersEl = this.scenarioFormEl.createDiv({
+			cls: 'stock-valuation-scenario-number-grid',
+		});
+		const netIncomeEl = this.addScenarioNumberField(
+			numbersEl,
+			'예상 순이익 (억)',
+			getMidpointValue(
+				input.operatingProfitMin,
+				input.operatingProfitMax,
+				input.operatingProfitMidPercent,
+			),
+		);
+		const perEl = this.addScenarioNumberField(
+			numbersEl,
+			'적용 PER',
+			getMidpointValue(input.perMin, input.perMax, input.perMidPercent),
+		);
+		const snapshotEl = this.scenarioFormEl.createDiv({
+			cls: 'stock-valuation-scenario-snapshot',
+		});
+		const previewEl = this.scenarioFormEl.createDiv({
+			cls: 'stock-valuation-scenario-preview',
+		});
+		const actionsEl = this.scenarioFormEl.createDiv({
+			cls: 'stock-valuation-scenario-form-actions',
+		});
+		const cancelButtonEl = actionsEl.createEl('button', {
+			text: '취소',
+			attr: { type: 'button' },
+		});
+		const saveButtonEl = actionsEl.createEl('button', {
+			text: '시나리오 저장',
+			cls: 'mod-cta',
+			attr: { type: 'button' },
+		});
+
+		const refresh = () => {
+			const totalShares = parsePositiveNumber(
+				this.host.getValuationInput(this.guid).totalShares,
+			);
+			const currentPrice = this.displayedCurrentPrice;
+			const netIncome = parsePositiveNumber(netIncomeEl.value);
+			const per = parsePositiveNumber(perEl.value);
+			snapshotEl.empty();
+			previewEl.empty();
+
+			if (this.livePriceLoading) {
+				snapshotEl.setText('현재가를 조회하고 있습니다.');
+			} else if (totalShares === null || currentPrice === null) {
+				snapshotEl.setText(
+					'시나리오를 저장하려면 총 주식 수와 현재 주가가 필요합니다.',
+				);
+			} else {
+				snapshotEl.setText(
+					`스냅샷 기준: 총 주식 수 ${formatNumber(totalShares)}주 · 현재가 ${formatPrice(currentPrice)}원`,
+				);
+			}
+
+			const canCalculate =
+				totalShares !== null &&
+				currentPrice !== null &&
+				netIncome !== null &&
+				per !== null;
+			if (canCalculate) {
+				const marketCap = netIncome * per;
+				const fairPrice = (marketCap * 100_000_000) / totalShares;
+				previewEl.createDiv({
+					text: `예상 시가총액 ${formatNumber(marketCap)}억`,
+				});
+				previewEl.createDiv({
+					text: `적정 주가 ${formatPrice(fairPrice)}원`,
+				});
+				previewEl.createDiv({
+					text: `현재가 대비 ${formatPercent((fairPrice / currentPrice - 1) * 100)}`,
+				});
+			}
+
+			saveButtonEl.disabled =
+				nameEl.value.trim().length === 0 || !canCalculate;
+		};
+		this.scenarioFormRefresh = refresh;
+		for (const element of [nameEl, netIncomeEl, perEl]) {
+			element.addEventListener('input', refresh);
+		}
+		cancelButtonEl.addEventListener('click', () => this.closeScenarioForm());
+		saveButtonEl.addEventListener('click', () => {
+			const totalShares = parsePositiveNumber(
+				this.host.getValuationInput(this.guid).totalShares,
+			);
+			const currentPrice = this.displayedCurrentPrice;
+			const netIncome = parsePositiveNumber(netIncomeEl.value);
+			const per = parsePositiveNumber(perEl.value);
+			if (
+				nameEl.value.trim().length === 0 ||
+				totalShares === null ||
+				currentPrice === null ||
+				netIncome === null ||
+				per === null
+			) {
+				new Notice('시나리오의 필수 값을 확인해주세요.');
+				return;
+			}
+
+			this.host.addValuationScenario(
+				this.guid,
+				createValuationScenario({
+					name: nameEl.value,
+					description: descriptionEl.value,
+					netIncome,
+					per,
+					totalShares,
+					currentPrice,
+				}),
+				this.instanceId,
+			);
+			this.closeScenarioForm();
+			this.renderScenarioList();
+			new Notice('시나리오를 저장했습니다.');
+		});
+		refresh();
+		nameEl.focus();
+	}
+
+	private closeScenarioForm(): void {
+		this.scenarioFormRefresh = null;
+		this.scenarioFormEl?.empty();
+		this.scenarioFormEl?.hide();
+	}
+
+	private addScenarioTextField(
+		containerEl: HTMLElement,
+		label: string,
+		placeholder: string,
+	): HTMLInputElement {
+		const fieldEl = containerEl.createEl('label', {
+			cls: 'stock-valuation-scenario-field',
+		});
+		fieldEl.createSpan({ text: label });
+		return fieldEl.createEl('input', {
+			attr: { type: 'text', placeholder },
+		});
+	}
+
+	private addScenarioNumberField(
+		containerEl: HTMLElement,
+		label: string,
+		initialValue: number | null,
+	): HTMLInputElement {
+		const fieldEl = containerEl.createEl('label', {
+			cls: 'stock-valuation-scenario-field',
+		});
+		fieldEl.createSpan({ text: label });
+		const inputEl = fieldEl.createEl('input', {
+			attr: { type: 'number', min: '0', step: 'any' },
+		});
+		inputEl.value = initialValue === null ? '' : String(initialValue);
+		return inputEl;
+	}
+
+	private renderScenarioList(): void {
+		if (this.scenarioListEl === null) {
+			return;
+		}
+
+		this.scenarioListEl.empty();
+		const scenarios = this.sortScenarios(
+			this.host.getValuationScenarios(this.guid),
+		);
+		if (scenarios.length === 0) {
+			this.scenarioListEl.createDiv({
+				text: '저장된 시나리오가 없습니다.',
+				cls: 'stock-valuation-message',
+			});
+			return;
+		}
+
+		const tableEl = this.scenarioListEl.createEl('table', {
+			cls: 'stock-valuation-scenario-table',
+		});
+		const headerRowEl = tableEl.createEl('thead').createEl('tr');
+		this.addScenarioSortHeader(headerRowEl, '시나리오', 'name');
+		this.addScenarioSortHeader(headerRowEl, '가정', 'assumption');
+		this.addScenarioSortHeader(headerRowEl, '적정가', 'fairPrice');
+		this.addScenarioSortHeader(
+			headerRowEl,
+			'현재 대비',
+			'potentialPercent',
+		);
+		this.addScenarioSortHeader(headerRowEl, '저장 시점', 'createdAt');
+		headerRowEl.createEl('th');
+		const tbodyEl = tableEl.createEl('tbody');
+		for (const scenario of scenarios) {
+			const rowEl = tbodyEl.createEl('tr', {
+				cls: 'stock-valuation-scenario-row',
+			});
+			rowEl.createEl('td', {
+				text: scenario.name,
+				cls: 'stock-valuation-scenario-name',
+			});
+			const assumptionEl = rowEl.createEl('td', {
+				cls: 'stock-valuation-scenario-assumption',
+			});
+			if (scenario.description.length > 0) {
+				assumptionEl.createDiv({ text: scenario.description });
+			}
+			assumptionEl.createDiv({
+				text: `순이익 ${formatNumber(scenario.netIncome)}억 × PER ${formatNumber(scenario.per)}배`,
+				cls: 'stock-valuation-scenario-detail',
+			});
+			rowEl.createEl('td', {
+				text: `${formatPrice(scenario.fairPrice)}원`,
+				cls: 'stock-valuation-scenario-price',
+			});
+			const potentialEl = rowEl.createEl('td', {
+				cls: 'stock-valuation-scenario-potential',
+			});
+			potentialEl.createSpan({
+				text: formatPercent(scenario.potentialPercent),
+				cls:
+					scenario.potentialPercent >= 0
+						? 'stock-valuation-scenario-potential-badge is-positive'
+						: 'stock-valuation-scenario-potential-badge is-negative',
+			});
+			potentialEl.createDiv({
+				text: `기준 ${formatPrice(scenario.currentPrice)}원`,
+				cls: 'stock-valuation-scenario-detail',
+			});
+			rowEl.createEl('td', {
+				text: formatScenarioTime(scenario.createdAt),
+				cls: 'stock-valuation-scenario-created-at',
+			});
+			const deleteCellEl = rowEl.createEl('td', {
+				cls: 'stock-valuation-scenario-delete-cell',
+			});
+			this.addScenarioDeleteButton(deleteCellEl, scenario.id);
+		}
+	}
+
+	private addScenarioSortHeader(
+		rowEl: HTMLTableRowElement,
+		label: string,
+		key: ScenarioSortKey,
+	): void {
+		const isActive = this.scenarioSortKey === key;
+		const headerEl = rowEl.createEl('th', {
+			attr: {
+				'aria-sort': isActive ? this.scenarioSortDirection : 'none',
+			},
+		});
+		const buttonEl = headerEl.createEl('button', {
+			cls: 'stock-valuation-scenario-sort-button',
+			attr: {
+				type: 'button',
+				'aria-label': `${label} 기준 정렬`,
+			},
+		});
+		buttonEl.createSpan({ text: label });
+		buttonEl.createSpan({
+			text: isActive
+				? this.scenarioSortDirection === 'ascending'
+					? '▲'
+					: '▼'
+				: '↕',
+			cls: 'stock-valuation-scenario-sort-indicator',
+		});
+		buttonEl.addEventListener('click', () => {
+			if (this.scenarioSortKey === key) {
+				this.scenarioSortDirection =
+					this.scenarioSortDirection === 'ascending'
+						? 'descending'
+						: 'ascending';
+			} else {
+				this.scenarioSortKey = key;
+				this.scenarioSortDirection =
+					key === 'name' || key === 'assumption'
+						? 'ascending'
+						: 'descending';
+			}
+			this.renderScenarioList();
+		});
+	}
+
+	private sortScenarios(scenarios: ValuationScenario[]): ValuationScenario[] {
+		const direction = this.scenarioSortDirection === 'ascending' ? 1 : -1;
+		return scenarios.sort((left, right) => {
+			let comparison: number;
+			switch (this.scenarioSortKey) {
+				case 'name':
+					comparison = left.name.localeCompare(right.name, 'ko');
+					break;
+				case 'assumption':
+					comparison =
+						left.netIncome - right.netIncome || left.per - right.per;
+					break;
+				case 'fairPrice':
+					comparison = left.fairPrice - right.fairPrice;
+					break;
+				case 'potentialPercent':
+					comparison = left.potentialPercent - right.potentialPercent;
+					break;
+				case 'createdAt':
+					comparison =
+						Date.parse(left.createdAt) - Date.parse(right.createdAt);
+					break;
+			}
+
+			return (
+				comparison * direction ||
+				Date.parse(right.createdAt) - Date.parse(left.createdAt)
+			);
+		});
+	}
+
+	private addScenarioDeleteButton(
+		containerEl: HTMLElement,
+		scenarioId: string,
+	): void {
+		const buttonEl = containerEl.createEl('button', {
+			cls: 'stock-valuation-scenario-delete clickable-icon',
+			attr: { type: 'button', 'aria-label': '시나리오 삭제', title: '시나리오 삭제' },
+		});
+		setIcon(buttonEl, 'trash-2');
+		let confirmationTimer: number | null = null;
+		buttonEl.addEventListener('click', () => {
+			if (buttonEl.dataset.confirmDelete !== 'true') {
+				buttonEl.dataset.confirmDelete = 'true';
+				buttonEl.setText('삭제 확인');
+				buttonEl.addClass('stock-valuation-scenario-delete-confirm');
+				confirmationTimer = window.setTimeout(() => {
+					buttonEl.dataset.confirmDelete = 'false';
+					buttonEl.removeClass('stock-valuation-scenario-delete-confirm');
+					buttonEl.empty();
+					setIcon(buttonEl, 'trash-2');
+				}, 3000);
+				return;
+			}
+
+			if (confirmationTimer !== null) {
+				window.clearTimeout(confirmationTimer);
+			}
+			this.host.deleteValuationScenario(
+				this.guid,
+				scenarioId,
+				this.instanceId,
+			);
+			this.renderScenarioList();
+			new Notice('시나리오를 삭제했습니다.');
+		});
+	}
 }
 
 function parsePositiveNumber(value: string): number | null {
@@ -668,6 +1108,40 @@ function parsePositiveNumber(value: string): number | null {
 	}
 
 	return parsed;
+}
+
+function getMidpointValue(
+	minValue: string,
+	maxValue: string,
+	percent: number,
+): number | null {
+	const min = parsePositiveNumber(minValue);
+	const max = parsePositiveNumber(maxValue);
+	if (min === null || max === null || min > max) {
+		return null;
+	}
+
+	return min + (max - min) * (percent / 100);
+}
+
+function formatScenarioTime(isoTime: string): string {
+	const date = new Date(isoTime);
+	const parts = new Intl.DateTimeFormat('ko-KR', {
+		timeZone: 'Asia/Seoul',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false,
+	})
+		.formatToParts(date)
+		.reduce<Record<string, string>>((acc, part) => {
+			acc[part.type] = part.value;
+			return acc;
+		}, {});
+
+	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 function isRangeBoundKey(key: TextValuationInputKey): boolean {

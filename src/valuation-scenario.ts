@@ -24,11 +24,35 @@ export interface ValuationScenarioSnapshotInput {
 export function createValuationScenario(
 	input: ValuationScenarioSnapshotInput,
 ): ValuationScenario {
+	return createScenarioValues({
+		id: createId(),
+		createdAt: new Date().toISOString(),
+		input,
+	});
+}
+
+export function updateValuationScenario(
+	scenario: ValuationScenario,
+	input: ValuationScenarioSnapshotInput,
+): ValuationScenario {
+	return createScenarioValues({
+		id: scenario.id,
+		createdAt: scenario.createdAt,
+		input,
+	});
+}
+
+function createScenarioValues(options: {
+	id: string;
+	createdAt: string;
+	input: ValuationScenarioSnapshotInput;
+}): ValuationScenario {
+	const { id, createdAt, input } = options;
 	const marketCap = input.netIncome * input.per;
 	const fairPrice = (marketCap * 100_000_000) / input.totalShares;
 
 	return {
-		id: createId(),
+		id,
 		name: input.name.trim(),
 		description: input.description.trim(),
 		netIncome: input.netIncome,
@@ -38,7 +62,7 @@ export function createValuationScenario(
 		fairPrice,
 		currentPrice: input.currentPrice,
 		potentialPercent: (fairPrice / input.currentPrice - 1) * 100,
-		createdAt: new Date().toISOString(),
+		createdAt,
 	};
 }
 

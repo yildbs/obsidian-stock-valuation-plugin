@@ -10,6 +10,7 @@ import {
 } from './valuation-band';
 import {
 	createValuationScenario,
+	updateValuationScenario,
 	ValuationScenario,
 } from './valuation-scenario';
 
@@ -51,6 +52,11 @@ export interface ValuationBlockHost {
 		sourceId?: string,
 	): void;
 	addValuationScenario(
+		guid: string,
+		scenario: ValuationScenario,
+		sourceId?: string,
+	): void;
+	updateValuationScenario(
 		guid: string,
 		scenario: ValuationScenario,
 		sourceId?: string,
@@ -907,11 +913,12 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		});
 	}
 
-	private openScenarioForm(): void {
+	private openScenarioForm(scenarioToEdit?: ValuationScenario): void {
 		if (this.scenarioFormEl === null) {
 			return;
 		}
 
+		const isEditing = scenarioToEdit !== undefined;
 		this.scenarioFormEl.empty();
 		this.scenarioFormEl.show();
 		const input = this.host.getValuationInput(this.guid);
@@ -920,27 +927,31 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			'시나리오 이름',
 			'예: 성장 유지하지만 멀티플 축소',
 		);
+		nameEl.value = scenarioToEdit?.name ?? '';
 		const descriptionEl = this.addScenarioTextField(
 			this.scenarioFormEl,
 			'가정 설명',
 			'선택 입력',
 		);
+		descriptionEl.value = scenarioToEdit?.description ?? '';
 		const numbersEl = this.scenarioFormEl.createDiv({
 			cls: 'stock-valuation-scenario-number-grid',
 		});
 		const netIncomeEl = this.addScenarioNumberField(
 			numbersEl,
 			'예상 순이익 (억)',
-			getMidpointValue(
-				input.operatingProfitMin,
-				input.operatingProfitMax,
-				input.operatingProfitMidPercent,
-			),
+			scenarioToEdit?.netIncome ??
+				getMidpointValue(
+					input.operatingProfitMin,
+					input.operatingProfitMax,
+					input.operatingProfitMidPercent,
+				),
 		);
 		const perEl = this.addScenarioNumberField(
 			numbersEl,
 			'적용 PER',
-			getMidpointValue(input.perMin, input.perMax, input.perMidPercent),
+			scenarioToEdit?.per ??
+				getMidpointValue(input.perMin, input.perMax, input.perMidPercent),
 		);
 		const snapshotEl = this.scenarioFormEl.createDiv({
 			cls: 'stock-valuation-scenario-snapshot',
@@ -956,22 +967,23 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			attr: { type: 'button' },
 		});
 		const saveButtonEl = actionsEl.createEl('button', {
-			text: '시나리오 저장',
+			text: isEditing ? '수정 저장' : '시나리오 저장',
 			cls: 'mod-cta',
 			attr: { type: 'button' },
 		});
 
 		const refresh = () => {
-			const totalShares = parsePositiveNumber(
-				this.host.getValuationInput(this.guid).totalShares,
-			);
-			const currentPrice = this.displayedCurrentPrice;
+			const totalShares =
+				scenarioToEdit?.totalShares ??
+				parsePositiveNumber(this.host.getValuationInput(this.guid).totalShares);
+			const currentPrice =
+				scenarioToEdit?.currentPrice ?? this.displayedCurrentPrice;
 			const netIncome = parsePositiveNumber(netIncomeEl.value);
 			const per = parsePositiveNumber(perEl.value);
 			snapshotEl.empty();
 			previewEl.empty();
 
-			if (this.livePriceLoading) {
+			if (!isEditing && this.livePriceLoading) {
 				snapshotEl.setText('현재가를 조회하고 있습니다.');
 			} else if (totalShares === null || currentPrice === null) {
 				snapshotEl.setText(
@@ -979,7 +991,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				);
 			} else {
 				snapshotEl.setText(
-					`스냅샷 기준: 총 주식 수 ${formatNumber(totalShares)}주 · 현재가 ${formatPrice(currentPrice)}원`,
+					`${isEditing ? '수정 기준' : '스냅샷 기준'}: 총 주식 수 ${formatNumber(totalShares)}주 · 현재가 ${formatPrice(currentPrice)}원`,
 				);
 			}
 
@@ -1011,10 +1023,11 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		}
 		cancelButtonEl.addEventListener('click', () => this.closeScenarioForm());
 		saveButtonEl.addEventListener('click', () => {
-			const totalShares = parsePositiveNumber(
-				this.host.getValuationInput(this.guid).totalShares,
-			);
-			const currentPrice = this.displayedCurrentPrice;
+			const totalShares =
+				scenarioToEdit?.totalShares ??
+				parsePositiveNumber(this.host.getValuationInput(this.guid).totalShares);
+			const currentPrice =
+				scenarioToEdit?.currentPrice ?? this.displayedCurrentPrice;
 			const netIncome = parsePositiveNumber(netIncomeEl.value);
 			const per = parsePositiveNumber(perEl.value);
 			if (
@@ -1028,21 +1041,32 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				return;
 			}
 
-			this.host.addValuationScenario(
-				this.guid,
-				createValuationScenario({
-					name: nameEl.value,
-					description: descriptionEl.value,
-					netIncome,
-					per,
-					totalShares,
-					currentPrice,
-				}),
-				this.instanceId,
-			);
+			const scenarioInput = {
+				name: nameEl.value,
+				description: descriptionEl.value,
+				netIncome,
+				per,
+				totalShares,
+				currentPrice,
+			};
+			if (scenarioToEdit !== undefined) {
+				this.host.updateValuationScenario(
+					this.guid,
+					updateValuationScenario(scenarioToEdit, scenarioInput),
+					this.instanceId,
+				);
+			} else {
+				this.host.addValuationScenario(
+					this.guid,
+					createValuationScenario(scenarioInput),
+					this.instanceId,
+				);
+			}
 			this.closeScenarioForm();
 			this.renderScenarioList();
-			new Notice('시나리오를 저장했습니다.');
+			new Notice(
+				isEditing ? '시나리오를 수정했습니다.' : '시나리오를 저장했습니다.',
+			);
 		});
 		refresh();
 		nameEl.focus();
@@ -1120,9 +1144,19 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			const rowEl = tbodyEl.createEl('tr', {
 				cls: 'stock-valuation-scenario-row',
 			});
-			rowEl.createEl('td', {
-				text: scenario.name,
+			const nameCellEl = rowEl.createEl('td', {
 				cls: 'stock-valuation-scenario-name',
+			});
+			const nameButtonEl = nameCellEl.createEl('button', {
+				text: scenario.name,
+				cls: 'stock-valuation-scenario-edit-button',
+				attr: {
+					type: 'button',
+					'aria-label': `${scenario.name} 시나리오 수정`,
+				},
+			});
+			nameButtonEl.addEventListener('click', () => {
+				this.openScenarioForm(scenario);
 			});
 			const assumptionEl = rowEl.createEl('td', {
 				cls: 'stock-valuation-scenario-assumption',

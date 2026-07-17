@@ -156,6 +156,18 @@ export default class StockValuationPlugin
 		this.notifyValuationListeners(guid, sourceId);
 	}
 
+	updateValuationScenario(
+		guid: string,
+		scenario: ValuationScenario,
+		sourceId?: string,
+	): void {
+		this.data.scenarios[guid] = (this.data.scenarios[guid] ?? []).map((item) =>
+			item.id === scenario.id ? { ...scenario } : item,
+		);
+		this.scheduleSave();
+		this.notifyValuationListeners(guid, sourceId);
+	}
+
 	deleteValuationScenario(
 		guid: string,
 		scenarioId: string,

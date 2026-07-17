@@ -492,6 +492,27 @@
 	line-height: 1.35;
 }
 
+.stock-valuation-scenario-edit-button {
+	height: auto;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	box-shadow: none;
+	color: inherit;
+	background: transparent;
+	font: inherit;
+	line-height: inherit;
+	text-align: left;
+	white-space: normal;
+}
+
+.stock-valuation-scenario-edit-button:hover,
+.stock-valuation-scenario-edit-button:focus-visible {
+	color: var(--interactive-accent);
+	background: transparent;
+	text-decoration: underline;
+}
+
 .stock-valuation-scenario-assumption {
 	line-height: 1.4;
 }

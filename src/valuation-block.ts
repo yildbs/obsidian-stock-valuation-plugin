@@ -847,6 +847,10 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				marketCapEok: 'netIncomeEok * per',
 				fairPriceKrw: '(marketCapEok * 100000000) / totalShares',
 				returnPercent: '(fairPriceKrw / currentPriceKrw - 1) * 100',
+				weightedFairPriceKrw:
+					'sum(fairPriceKrw * weight) / sum(weight)',
+				expectedReturnPercent:
+					'(weightedFairPriceKrw / weightedCurrentPriceKrw - 1) * 100',
 			},
 			source: {
 				app: 'Obsidian Stock Valuation Band',
@@ -860,19 +864,50 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			},
 			exportedAt,
 			scenarioCount: scenarios.length,
-			weightedSummary,
+			weightedSummary:
+				weightedSummary === null
+					? null
+					: {
+							description:
+								'모든 시나리오의 가중치를 반영해 계산한 통합 기대 적정주가입니다.',
+								weightTotal: weightedSummary.weightTotal,
+								expectedFairPriceKrw:
+									roundToOneDecimal(
+										weightedSummary.weightedFairPriceKrw,
+									),
+								weightedFairPriceKrw:
+									roundToOneDecimal(
+										weightedSummary.weightedFairPriceKrw,
+									),
+								weightedCurrentPriceKrw:
+									roundToOneDecimal(
+										weightedSummary.weightedCurrentPriceKrw,
+									),
+								expectedReturnPercent:
+									roundToOneDecimal(
+										weightedSummary.expectedReturnPercent,
+									),
+							display: {
+								weightTotal: formatNumber(weightedSummary.weightTotal),
+								expectedFairPrice: `${formatPrice(weightedSummary.weightedFairPriceKrw)}원`,
+								weightedCurrentPrice: `${formatPrice(weightedSummary.weightedCurrentPriceKrw)}원`,
+								expectedReturn: formatPercent(
+									weightedSummary.expectedReturnPercent,
+								),
+							},
+						},
 			scenarios: scenarios.map((scenario) => ({
-				scenario: scenario.name,
-				description: scenario.description,
-				weight: scenario.weight,
-				assumption: `순이익 ${formatNumber(scenario.netIncome)}억 × PER ${formatNumber(scenario.per)}배`,
-				netIncomeEok: scenario.netIncome,
-				per: scenario.per,
-				marketCapEok: scenario.marketCap,
-				totalShares: scenario.totalShares,
-				fairPriceKrw: scenario.fairPrice,
-				currentPriceKrw: scenario.currentPrice,
-				returnPercent: scenario.potentialPercent,
+					scenario: scenario.name,
+					description: scenario.description,
+					weight: scenario.weight,
+					assumption: `순이익 ${formatNumber(scenario.netIncome)}억 × PER ${formatNumber(scenario.per)}배`,
+					netIncomeEok: roundToOneDecimal(scenario.netIncome),
+					per: roundToOneDecimal(scenario.per),
+					marketCapEok: roundToOneDecimal(scenario.marketCap),
+					totalShares: roundToOneDecimal(scenario.totalShares),
+					fairPriceKrw: roundToOneDecimal(scenario.fairPrice),
+					currentPriceKrw: roundToOneDecimal(scenario.currentPrice),
+					returnPercent: roundToOneDecimal(scenario.potentialPercent),
 				display: {
 					marketCap: `${formatNumber(scenario.marketCap)}억`,
 					fairPrice: `${formatPrice(scenario.fairPrice)}원`,
@@ -1420,6 +1455,10 @@ function parsePositiveNumber(value: string): number | null {
 	}
 
 	return parsed;
+}
+
+function roundToOneDecimal(value: number): number {
+	return Math.round(value * 10) / 10;
 }
 
 function calculateScenarioWeightedSummary(

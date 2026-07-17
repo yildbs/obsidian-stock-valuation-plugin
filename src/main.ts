@@ -88,12 +88,13 @@ export default class StockValuationPlugin
 					new ValuationBlockRenderer(
 						el,
 						guid,
-						ctx.sourcePath,
-						ctx.frontmatter,
-						this,
-					),
-				);
-			},
+							ctx.sourcePath,
+							ctx.frontmatter,
+							this,
+							() => ctx.getSectionInfo(el)?.lineEnd ?? null,
+						),
+					);
+				},
 		);
 	}
 
@@ -229,6 +230,59 @@ export default class StockValuationPlugin
 
 	openScenarioQuestionTemplateModal(): void {
 		new ScenarioQuestionTemplateModal(this.app, this).open();
+	}
+
+	async cloneValuationBlock(
+		guid: string,
+		sourcePath: string,
+		insertAfterLine: number | null,
+	): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(sourcePath);
+		if (!(file instanceof TFile)) {
+			new Notice('복제할 Markdown 문서를 찾을 수 없습니다.');
+			return;
+		}
+
+		const newGuid = createGuid();
+		this.data.valuations[newGuid] = normalizeValuationInput(
+			this.ensureValuationInput(guid),
+		);
+		this.data.scenarios[newGuid] = (this.data.scenarios[guid] ?? []).map(
+			(scenario) => ({
+				...scenario,
+				id: createGuid(),
+			}),
+		);
+		this.data.scenarioSorts[newGuid] = {
+			...(this.data.scenarioSorts[guid] ?? DEFAULT_SCENARIO_SORT),
+		};
+		this.scheduleSave();
+
+		try {
+			const text = await this.app.vault.read(file);
+			const lines = text.split('\n');
+			const insertAt =
+				insertAfterLine === null
+					? lines.length
+					: Math.min(Math.max(insertAfterLine + 1, 0), lines.length);
+			lines.splice(
+				insertAt,
+				0,
+				'',
+				'```stock-valuation',
+				`guid: ${newGuid}`,
+				'```',
+				'',
+			);
+			await this.app.vault.modify(file, lines.join('\n'));
+			new Notice('계산기를 새 GUID로 복제했습니다.');
+		} catch (error) {
+			delete this.data.valuations[newGuid];
+			delete this.data.scenarios[newGuid];
+			delete this.data.scenarioSorts[newGuid];
+			this.scheduleSave();
+			new Notice(`계산기 복제 실패: ${getErrorMessage(error)}`);
+		}
 	}
 
 	private async resolveFrontmatter(
@@ -431,6 +485,7 @@ function isScenarioSortKey(value: unknown): value is ScenarioSortKey {
 	return (
 		value === 'name' ||
 		value === 'assumption' ||
+		value === 'weight' ||
 		value === 'fairPrice' ||
 		value === 'potentialPercent' ||
 		value === 'createdAt'
@@ -467,6 +522,21 @@ function extractFrontmatterText(text: string): string | null {
 	const match = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
 
 	return match?.[1] ?? null;
+}
+
+function getErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	if (
+		typeof error !== 'string' &&
+		typeof error !== 'number' &&
+		typeof error !== 'boolean'
+	) {
+		return '알 수 없는 오류';
+	}
+
+	return String(error);
 }
 
 function createGuid(): string {

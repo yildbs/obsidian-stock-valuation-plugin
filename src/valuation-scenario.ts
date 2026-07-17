@@ -2,6 +2,7 @@ export interface ValuationScenario {
 	id: string;
 	name: string;
 	description: string;
+	weight: number;
 	netIncome: number;
 	per: number;
 	marketCap: number;
@@ -15,6 +16,7 @@ export interface ValuationScenario {
 export interface ValuationScenarioSnapshotInput {
 	name: string;
 	description: string;
+	weight: number;
 	netIncome: number;
 	per: number;
 	totalShares: number;
@@ -55,6 +57,7 @@ function createScenarioValues(options: {
 		id,
 		name: input.name.trim(),
 		description: input.description.trim(),
+		weight: normalizeScenarioWeight(input.weight),
 		netIncome: input.netIncome,
 		per: input.per,
 		marketCap,
@@ -71,16 +74,18 @@ export function normalizeValuationScenarios(value: unknown): ValuationScenario[]
 		return [];
 	}
 
-	return value.filter(isValuationScenario).map((scenario) => ({ ...scenario }));
+	return value
+		.map(normalizeValuationScenario)
+		.filter((scenario): scenario is ValuationScenario => scenario !== null);
 }
 
-function isValuationScenario(value: unknown): value is ValuationScenario {
+function normalizeValuationScenario(value: unknown): ValuationScenario | null {
 	if (value === null || typeof value !== 'object') {
-		return false;
+		return null;
 	}
 
 	const candidate = value as Partial<ValuationScenario>;
-	return (
+	if (
 		typeof candidate.id === 'string' &&
 		typeof candidate.name === 'string' &&
 		typeof candidate.description === 'string' &&
@@ -94,7 +99,22 @@ function isValuationScenario(value: unknown): value is ValuationScenario {
 		Number.isFinite(candidate.potentialPercent) &&
 		typeof candidate.createdAt === 'string' &&
 		!Number.isNaN(Date.parse(candidate.createdAt))
-	);
+	) {
+		return {
+			...candidate,
+			weight: normalizeScenarioWeight(candidate.weight),
+		} as ValuationScenario;
+	}
+
+	return null;
+}
+
+export function normalizeScenarioWeight(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return 5;
+	}
+
+	return Math.min(Math.max(Math.round(value), 1), 10);
 }
 
 function isPositiveNumber(value: unknown): value is number {

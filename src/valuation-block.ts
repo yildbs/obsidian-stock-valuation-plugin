@@ -10,6 +10,7 @@ import {
 } from './valuation-band';
 import {
 	createValuationScenario,
+	normalizeScenarioWeight,
 	updateValuationScenario,
 	ValuationScenario,
 } from './valuation-scenario';
@@ -27,6 +28,7 @@ type PercentValuationInputKey =
 export type ScenarioSortKey =
 	| 'name'
 	| 'assumption'
+	| 'weight'
 	| 'fairPrice'
 	| 'potentialPercent'
 	| 'createdAt';
@@ -81,6 +83,11 @@ export interface ValuationBlockHost {
 	): Promise<unknown>;
 	getScenarioQuestionTemplate(): string;
 	openScenarioQuestionTemplateModal(): void;
+	cloneValuationBlock(
+		guid: string,
+		sourcePath: string,
+		insertAfterLine: number | null,
+	): Promise<void>;
 }
 
 const COPY_SUCCESS_MESSAGE = '계산 결과를 클립보드에 복사했습니다.';
@@ -111,13 +118,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	private livePriceRequestId = 0;
 	private inputEls = new Map<keyof ValuationBandInput, HTMLInputElement>();
 
-	constructor(
-		containerEl: HTMLElement,
-		private readonly guid: string,
-		private readonly sourcePath: string,
-		private readonly initialFrontmatter: unknown,
-		private readonly host: ValuationBlockHost,
-	) {
+		constructor(
+			containerEl: HTMLElement,
+			private readonly guid: string,
+			private readonly sourcePath: string,
+			private readonly initialFrontmatter: unknown,
+			private readonly host: ValuationBlockHost,
+			private readonly getSourceLineEnd: () => number | null,
+		) {
 		super(containerEl);
 		const sort = this.host.getValuationScenarioSort(guid);
 		this.scenarioSortKey = sort.key;
@@ -152,7 +160,25 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		const headerEl = this.containerEl.createDiv({
 			cls: 'stock-valuation-block-header',
 		});
-		headerEl.createEl('h4', { text: '주식 가치 밴드 계산기' });
+		const titleEl = headerEl.createDiv({
+			cls: 'stock-valuation-block-title',
+		});
+		titleEl.createEl('h4', { text: '주식 가치 밴드 계산기' });
+		const cloneButtonEl = titleEl.createEl('button', {
+			cls: 'stock-valuation-clone-button',
+			text: 'Clone',
+			attr: {
+				type: 'button',
+				title: '현재 계산기를 새 GUID로 복제',
+			},
+		});
+		cloneButtonEl.addEventListener('click', () => {
+			void this.host.cloneValuationBlock(
+				this.guid,
+				this.sourcePath,
+				this.getSourceLineEnd(),
+			);
+		});
 		headerEl.createEl('span', {
 			text: this.guid,
 			cls: 'stock-valuation-guid',
@@ -801,12 +827,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		}
 
 		const exportedAt = new Date().toISOString();
+		const weightedSummary = calculateScenarioWeightedSummary(scenarios);
 		const payload = {
 			type: 'stock_valuation_scenarios',
 			description:
 				'이 JSON은 사용자가 특정 주식을 분석하면서 지금까지 관찰한 내용과 가정을 바탕으로 작성한 가치평가 시나리오입니다. 각 시나리오는 미래 순이익과 적용 PER에 대한 사용자 정의 가정이며, 사실 확정값이나 공식 전망치가 아니라 비교와 추가 분석을 위한 가설입니다.',
 			language: 'ko',
 			unitNotes: {
+				weight: '시나리오 발생 가능성에 대한 사용자 체감 가중치, 1~10 정수',
 				netIncomeEok: '예상 연간 순이익, 단위는 억 원',
 				per: '가치평가에 적용한 PER 배수',
 				marketCapEok: '예상 시가총액, 단위는 억 원',
@@ -832,9 +860,11 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			},
 			exportedAt,
 			scenarioCount: scenarios.length,
+			weightedSummary,
 			scenarios: scenarios.map((scenario) => ({
 				scenario: scenario.name,
 				description: scenario.description,
+				weight: scenario.weight,
 				assumption: `순이익 ${formatNumber(scenario.netIncome)}억 × PER ${formatNumber(scenario.per)}배`,
 				netIncomeEok: scenario.netIncome,
 				per: scenario.per,
@@ -953,6 +983,12 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			scenarioToEdit?.per ??
 				getMidpointValue(input.perMin, input.perMax, input.perMidPercent),
 		);
+		const weightEl = this.addScenarioNumberField(
+			numbersEl,
+			'시나리오 가중치',
+			scenarioToEdit?.weight ?? 5,
+			{ min: 1, max: 10, step: 1 },
+		);
 		const snapshotEl = this.scenarioFormEl.createDiv({
 			cls: 'stock-valuation-scenario-snapshot',
 		});
@@ -980,6 +1016,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				scenarioToEdit?.currentPrice ?? this.displayedCurrentPrice;
 			const netIncome = parsePositiveNumber(netIncomeEl.value);
 			const per = parsePositiveNumber(perEl.value);
+			const weight = parseScenarioWeight(weightEl.value);
 			snapshotEl.empty();
 			previewEl.empty();
 
@@ -1012,13 +1049,18 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				previewEl.createDiv({
 					text: `현재가 대비 ${formatPercent((fairPrice / currentPrice - 1) * 100)}`,
 				});
+				previewEl.createDiv({
+					text: `가중치 ${weight ?? '-'} / 10`,
+				});
 			}
 
 			saveButtonEl.disabled =
-				nameEl.value.trim().length === 0 || !canCalculate;
+				nameEl.value.trim().length === 0 ||
+				!canCalculate ||
+				weight === null;
 		};
 		this.scenarioFormRefresh = refresh;
-		for (const element of [nameEl, netIncomeEl, perEl]) {
+		for (const element of [nameEl, netIncomeEl, perEl, weightEl]) {
 			element.addEventListener('input', refresh);
 		}
 		cancelButtonEl.addEventListener('click', () => this.closeScenarioForm());
@@ -1030,12 +1072,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				scenarioToEdit?.currentPrice ?? this.displayedCurrentPrice;
 			const netIncome = parsePositiveNumber(netIncomeEl.value);
 			const per = parsePositiveNumber(perEl.value);
+			const weight = parseScenarioWeight(weightEl.value);
 			if (
 				nameEl.value.trim().length === 0 ||
 				totalShares === null ||
 				currentPrice === null ||
 				netIncome === null ||
-				per === null
+				per === null ||
+				weight === null
 			) {
 				new Notice('시나리오의 필수 값을 확인해주세요.');
 				return;
@@ -1044,6 +1088,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			const scenarioInput = {
 				name: nameEl.value,
 				description: descriptionEl.value,
+				weight,
 				netIncome,
 				per,
 				totalShares,
@@ -1096,13 +1141,23 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		containerEl: HTMLElement,
 		label: string,
 		initialValue: number | null,
+		options?: {
+			min?: number;
+			max?: number;
+			step?: number;
+		},
 	): HTMLInputElement {
 		const fieldEl = containerEl.createEl('label', {
 			cls: 'stock-valuation-scenario-field',
 		});
 		fieldEl.createSpan({ text: label });
 		const inputEl = fieldEl.createEl('input', {
-			attr: { type: 'number', min: '0', step: 'any' },
+			attr: {
+				type: 'number',
+				min: String(options?.min ?? 0),
+				...(options?.max !== undefined ? { max: String(options.max) } : {}),
+				step: String(options?.step ?? 'any'),
+			},
 		});
 		inputEl.value = initialValue === null ? '' : String(initialValue);
 		return inputEl;
@@ -1131,6 +1186,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		const headerRowEl = tableEl.createEl('thead').createEl('tr');
 		this.addScenarioSortHeader(headerRowEl, '시나리오', 'name');
 		this.addScenarioSortHeader(headerRowEl, '가정', 'assumption');
+		this.addScenarioSortHeader(headerRowEl, '가중치', 'weight');
 		this.addScenarioSortHeader(headerRowEl, '적정가', 'fairPrice');
 		this.addScenarioSortHeader(
 			headerRowEl,
@@ -1169,6 +1225,10 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				cls: 'stock-valuation-scenario-detail',
 			});
 			rowEl.createEl('td', {
+				text: String(scenario.weight),
+				cls: 'stock-valuation-scenario-weight',
+			});
+			rowEl.createEl('td', {
 				text: `${formatPrice(scenario.fairPrice)}원`,
 				cls: 'stock-valuation-scenario-price',
 			});
@@ -1195,6 +1255,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			});
 			this.addScenarioDeleteButton(deleteCellEl, scenario.id);
 		}
+		this.renderScenarioWeightedSummary(this.scenarioListEl, scenarios);
 	}
 
 	private addScenarioSortHeader(
@@ -1249,6 +1310,29 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		});
 	}
 
+	private renderScenarioWeightedSummary(
+		containerEl: HTMLElement,
+		scenarios: ValuationScenario[],
+	): void {
+		const summary = calculateScenarioWeightedSummary(scenarios);
+		if (summary === null) {
+			return;
+		}
+
+		const summaryEl = containerEl.createDiv({
+			cls: 'stock-valuation-scenario-weighted-summary',
+		});
+		summaryEl.createDiv({
+			text: `가중치 합 ${formatNumber(summary.weightTotal)}`,
+		});
+		summaryEl.createDiv({
+			text: `기대 적정주가 ${formatPrice(summary.weightedFairPriceKrw)}원`,
+		});
+		summaryEl.createDiv({
+			text: `가중평균 현재가 대비 ${formatPercent(summary.expectedReturnPercent)}`,
+		});
+	}
+
 	private sortScenarios(scenarios: ValuationScenario[]): ValuationScenario[] {
 		const direction = this.scenarioSortDirection === 'ascending' ? 1 : -1;
 		return scenarios.sort((left, right) => {
@@ -1260,6 +1344,9 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				case 'assumption':
 					comparison =
 						left.netIncome - right.netIncome || left.per - right.per;
+					break;
+				case 'weight':
+					comparison = left.weight - right.weight;
 					break;
 				case 'fairPrice':
 					comparison = left.fairPrice - right.fairPrice;
@@ -1335,6 +1422,42 @@ function parsePositiveNumber(value: string): number | null {
 	return parsed;
 }
 
+function calculateScenarioWeightedSummary(
+	scenarios: ValuationScenario[],
+): {
+	weightTotal: number;
+	weightedFairPriceKrw: number;
+	weightedCurrentPriceKrw: number;
+	expectedReturnPercent: number;
+} | null {
+	const weightTotal = scenarios.reduce(
+		(total, scenario) => total + scenario.weight,
+		0,
+	);
+	if (weightTotal <= 0) {
+		return null;
+	}
+
+	const weightedFairPriceKrw =
+		scenarios.reduce(
+			(total, scenario) => total + scenario.fairPrice * scenario.weight,
+			0,
+		) / weightTotal;
+	const weightedCurrentPriceKrw =
+		scenarios.reduce(
+			(total, scenario) => total + scenario.currentPrice * scenario.weight,
+			0,
+		) / weightTotal;
+
+	return {
+		weightTotal,
+		weightedFairPriceKrw,
+		weightedCurrentPriceKrw,
+		expectedReturnPercent:
+			(weightedFairPriceKrw / weightedCurrentPriceKrw - 1) * 100,
+	};
+}
+
 function getMidpointValue(
 	minValue: string,
 	maxValue: string,
@@ -1347,6 +1470,20 @@ function getMidpointValue(
 	}
 
 	return min + (max - min) * (percent / 100);
+}
+
+function parseScenarioWeight(value: string): number | null {
+	const trimmed = value.trim();
+	if (!/^\d+$/.test(trimmed)) {
+		return null;
+	}
+
+	const parsed = Number(trimmed);
+	if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+		return null;
+	}
+
+	return normalizeScenarioWeight(parsed);
 }
 
 function formatScenarioTime(isoTime: string): string {
@@ -1375,6 +1512,8 @@ function getScenarioSortLabel(key: ScenarioSortKey): string {
 			return '시나리오';
 		case 'assumption':
 			return '가정';
+		case 'weight':
+			return '가중치';
 		case 'fairPrice':
 			return '적정가';
 		case 'potentialPercent':

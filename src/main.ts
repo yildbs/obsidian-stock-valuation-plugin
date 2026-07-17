@@ -4,10 +4,18 @@ import {
 	ValuationBandInput,
 } from './valuation-band';
 import {
+	ScenarioSortKey,
+	SortDirection,
 	ValuationBlockHost,
 	ValuationBlockRenderer,
+	ValuationScenarioSort,
 } from './valuation-block';
 import { fetchLivePrice, LivePriceResult } from './live-price';
+import {
+	DEFAULT_SCENARIO_QUESTION_TEMPLATE,
+	LEGACY_SCENARIO_QUESTION_TEMPLATE,
+	ScenarioQuestionTemplateModal,
+} from './scenario-question-template';
 import {
 	normalizeValuationScenarios,
 	ValuationScenario,
@@ -16,11 +24,19 @@ import {
 interface StockValuationPluginData {
 	valuations: Record<string, ValuationBandInput>;
 	scenarios: Record<string, ValuationScenario[]>;
+	scenarioSorts: Record<string, ValuationScenarioSort>;
+	questionTemplate: string;
 }
 
 const DEFAULT_DATA: StockValuationPluginData = {
 	valuations: {},
 	scenarios: {},
+	scenarioSorts: {},
+	questionTemplate: DEFAULT_SCENARIO_QUESTION_TEMPLATE,
+};
+const DEFAULT_SCENARIO_SORT: ValuationScenarioSort = {
+	key: 'createdAt',
+	direction: 'descending',
 };
 const SAVE_DELAY_MS = 300;
 
@@ -113,6 +129,20 @@ export default class StockValuationPlugin
 		}));
 	}
 
+	getValuationScenarioSort(guid: string): ValuationScenarioSort {
+		return { ...(this.data.scenarioSorts[guid] ?? DEFAULT_SCENARIO_SORT) };
+	}
+
+	updateValuationScenarioSort(
+		guid: string,
+		sort: ValuationScenarioSort,
+		sourceId?: string,
+	): void {
+		this.data.scenarioSorts[guid] = normalizeValuationScenarioSort(sort);
+		this.scheduleSave();
+		this.notifyValuationListeners(guid, sourceId);
+	}
+
 	addValuationScenario(
 		guid: string,
 		scenario: ValuationScenario,
@@ -167,6 +197,28 @@ export default class StockValuationPlugin
 		return fetchLivePrice(frontmatter, forceRefresh);
 	}
 
+	async getDocumentFrontmatter(
+		sourcePath: string,
+		initialFrontmatter: unknown,
+	): Promise<unknown> {
+		return this.resolveFrontmatter(sourcePath, initialFrontmatter);
+	}
+
+	getScenarioQuestionTemplate(): string {
+		return this.data.questionTemplate;
+	}
+
+	updateScenarioQuestionTemplate(template: string): void {
+		const trimmed = template.trim();
+		this.data.questionTemplate =
+			trimmed.length > 0 ? trimmed : DEFAULT_SCENARIO_QUESTION_TEMPLATE;
+		this.scheduleSave();
+	}
+
+	openScenarioQuestionTemplateModal(): void {
+		new ScenarioQuestionTemplateModal(this.app, this).open();
+	}
+
 	private async resolveFrontmatter(
 		sourcePath: string,
 		initialFrontmatter: unknown,
@@ -210,6 +262,12 @@ export default class StockValuationPlugin
 		const loaded = (await this.loadData()) as Partial<StockValuationPluginData> | null;
 		const valuations = loaded?.valuations ?? {};
 		const scenarios = loaded?.scenarios ?? {};
+		const scenarioSorts = loaded?.scenarioSorts ?? {};
+		const questionTemplate =
+			typeof loaded?.questionTemplate === 'string' &&
+			loaded.questionTemplate.trim().length > 0
+				? normalizeQuestionTemplate(loaded.questionTemplate)
+				: DEFAULT_SCENARIO_QUESTION_TEMPLATE;
 		this.data = {
 			valuations: Object.fromEntries(
 				Object.entries(valuations).map(([guid, input]) => [
@@ -223,6 +281,13 @@ export default class StockValuationPlugin
 					normalizeValuationScenarios(items),
 				]),
 			),
+			scenarioSorts: Object.fromEntries(
+				Object.entries(scenarioSorts).map(([guid, sort]) => [
+					guid,
+					normalizeValuationScenarioSort(sort),
+				]),
+			),
+			questionTemplate,
 		};
 	}
 
@@ -321,6 +386,47 @@ function normalizeValuationInput(input: unknown): ValuationBandInput {
 				? candidate.lockedMidMarketCap
 				: DEFAULT_VALUATION_INPUT.lockedMidMarketCap,
 	};
+}
+
+function normalizeQuestionTemplate(template: string): string {
+	const trimmed = template.trim();
+	if (trimmed === LEGACY_SCENARIO_QUESTION_TEMPLATE) {
+		return DEFAULT_SCENARIO_QUESTION_TEMPLATE;
+	}
+
+	return trimmed;
+}
+
+function normalizeValuationScenarioSort(
+	value: unknown,
+): ValuationScenarioSort {
+	if (value === null || typeof value !== 'object') {
+		return DEFAULT_SCENARIO_SORT;
+	}
+
+	const candidate = value as Partial<ValuationScenarioSort>;
+	return {
+		key: isScenarioSortKey(candidate.key)
+			? candidate.key
+			: DEFAULT_SCENARIO_SORT.key,
+		direction: isSortDirection(candidate.direction)
+			? candidate.direction
+			: DEFAULT_SCENARIO_SORT.direction,
+	};
+}
+
+function isScenarioSortKey(value: unknown): value is ScenarioSortKey {
+	return (
+		value === 'name' ||
+		value === 'assumption' ||
+		value === 'fairPrice' ||
+		value === 'potentialPercent' ||
+		value === 'createdAt'
+	);
+}
+
+function isSortDirection(value: unknown): value is SortDirection {
+	return value === 'ascending' || value === 'descending';
 }
 
 function normalizePercent(value: unknown): number {

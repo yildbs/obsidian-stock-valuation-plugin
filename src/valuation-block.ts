@@ -23,13 +23,18 @@ type TextValuationInputKey =
 type PercentValuationInputKey =
 	| 'operatingProfitMidPercent'
 	| 'perMidPercent';
-type ScenarioSortKey =
+export type ScenarioSortKey =
 	| 'name'
 	| 'assumption'
 	| 'fairPrice'
 	| 'potentialPercent'
 	| 'createdAt';
-type SortDirection = 'ascending' | 'descending';
+export type SortDirection = 'ascending' | 'descending';
+
+export interface ValuationScenarioSort {
+	key: ScenarioSortKey;
+	direction: SortDirection;
+}
 
 export interface ValuationBlockHost {
 	getValuationInput(guid: string): ValuationBandInput;
@@ -39,6 +44,12 @@ export interface ValuationBlockHost {
 		sourceId?: string,
 	): void;
 	getValuationScenarios(guid: string): ValuationScenario[];
+	getValuationScenarioSort(guid: string): ValuationScenarioSort;
+	updateValuationScenarioSort(
+		guid: string,
+		sort: ValuationScenarioSort,
+		sourceId?: string,
+	): void;
 	addValuationScenario(
 		guid: string,
 		scenario: ValuationScenario,
@@ -58,9 +69,17 @@ export interface ValuationBlockHost {
 		initialFrontmatter: unknown,
 		forceRefresh: boolean,
 	): Promise<LivePriceResult>;
+	getDocumentFrontmatter(
+		sourcePath: string,
+		initialFrontmatter: unknown,
+	): Promise<unknown>;
+	getScenarioQuestionTemplate(): string;
+	openScenarioQuestionTemplateModal(): void;
 }
 
 const COPY_SUCCESS_MESSAGE = '계산 결과를 클립보드에 복사했습니다.';
+const SCENARIO_JSON_COPY_SUCCESS_MESSAGE =
+	'시나리오 JSON을 클립보드에 복사했습니다.';
 const NUMBER_PATTERN = /^-?(?:\d+|\d*\.\d+)$/;
 
 export class ValuationBlockRenderer extends MarkdownRenderChild {
@@ -80,8 +99,9 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 	private scenarioFormRefresh: (() => void) | null = null;
 	private displayedCurrentPrice: number | null = null;
 	private livePriceLoading = false;
-	private scenarioSortKey: ScenarioSortKey = 'createdAt';
-	private scenarioSortDirection: SortDirection = 'descending';
+	private includeQuestionInScenarioCopy = false;
+	private scenarioSortKey: ScenarioSortKey;
+	private scenarioSortDirection: SortDirection;
 	private livePriceRequestId = 0;
 	private inputEls = new Map<keyof ValuationBandInput, HTMLInputElement>();
 
@@ -93,6 +113,9 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		private readonly host: ValuationBlockHost,
 	) {
 		super(containerEl);
+		const sort = this.host.getValuationScenarioSort(guid);
+		this.scenarioSortKey = sort.key;
+		this.scenarioSortDirection = sort.direction;
 	}
 
 	onload(): void {
@@ -101,6 +124,7 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 				return;
 			}
 
+			this.syncScenarioSort();
 			this.syncControls();
 			this.updateCalculatedView();
 			this.renderScenarioList();
@@ -449,6 +473,12 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 		this.syncLivePriceControls(input);
 	}
 
+	private syncScenarioSort(): void {
+		const sort = this.host.getValuationScenarioSort(this.guid);
+		this.scenarioSortKey = sort.key;
+		this.scenarioSortDirection = sort.direction;
+	}
+
 	private updateCalculatedView(forceRefresh = false): void {
 		this.updateMidpointLabels();
 		const requestId = ++this.livePriceRequestId;
@@ -702,7 +732,38 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			cls: 'stock-valuation-scenario-header',
 		});
 		headerEl.createEl('h5', { text: '시나리오' });
-		const addButtonEl = headerEl.createEl('button', {
+		const actionEl = headerEl.createDiv({
+			cls: 'stock-valuation-scenario-header-actions',
+		});
+		const includeQuestionLabelEl = actionEl.createEl('label', {
+			cls: 'stock-valuation-scenario-question-toggle',
+		});
+		const includeQuestionCheckboxEl = includeQuestionLabelEl.createEl(
+			'input',
+			{
+				attr: { type: 'checkbox' },
+			},
+		);
+		includeQuestionCheckboxEl.checked = this.includeQuestionInScenarioCopy;
+		includeQuestionLabelEl.createSpan({ text: '질문 포함' });
+		includeQuestionCheckboxEl.addEventListener('change', () => {
+			this.includeQuestionInScenarioCopy = includeQuestionCheckboxEl.checked;
+		});
+		const templateButtonEl = actionEl.createEl('button', {
+			text: '질문 템플릿',
+			attr: { type: 'button' },
+		});
+		templateButtonEl.addEventListener('click', () => {
+			this.host.openScenarioQuestionTemplateModal();
+		});
+		const copyJsonButtonEl = actionEl.createEl('button', {
+			text: 'JSON 복사',
+			attr: { type: 'button' },
+		});
+		copyJsonButtonEl.addEventListener('click', () => {
+			void this.copyScenariosAsJson();
+		});
+		const addButtonEl = actionEl.createEl('button', {
 			text: '시나리오 추가',
 			attr: { type: 'button' },
 		});
@@ -722,6 +783,128 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 			cls: 'stock-valuation-scenario-list',
 		});
 		this.renderScenarioList();
+	}
+
+	private async copyScenariosAsJson(): Promise<void> {
+		const scenarios = this.sortScenarios(
+			this.host.getValuationScenarios(this.guid),
+		);
+		if (scenarios.length === 0) {
+			new Notice('복사할 시나리오가 없습니다.');
+			return;
+		}
+
+		const exportedAt = new Date().toISOString();
+		const payload = {
+			type: 'stock_valuation_scenarios',
+			description:
+				'이 JSON은 사용자가 특정 주식을 분석하면서 지금까지 관찰한 내용과 가정을 바탕으로 작성한 가치평가 시나리오입니다. 각 시나리오는 미래 순이익과 적용 PER에 대한 사용자 정의 가정이며, 사실 확정값이나 공식 전망치가 아니라 비교와 추가 분석을 위한 가설입니다.',
+			language: 'ko',
+			unitNotes: {
+				netIncomeEok: '예상 연간 순이익, 단위는 억 원',
+				per: '가치평가에 적용한 PER 배수',
+				marketCapEok: '예상 시가총액, 단위는 억 원',
+				totalShares: '총 주식 수, 단위는 주',
+				fairPriceKrw: '적정 주가, 단위는 원',
+				currentPriceKrw: '시나리오 저장 당시 기준 현재 주가, 단위는 원',
+				returnPercent: '현재 주가 대비 예상 수익률, 단위는 %',
+			},
+			calculationMethod: {
+				marketCapEok: 'netIncomeEok * per',
+				fairPriceKrw: '(marketCapEok * 100000000) / totalShares',
+				returnPercent: '(fairPriceKrw / currentPriceKrw - 1) * 100',
+			},
+			source: {
+				app: 'Obsidian Stock Valuation Band',
+				guid: this.guid,
+				path: this.sourcePath,
+			},
+			sort: {
+				key: this.scenarioSortKey,
+				label: getScenarioSortLabel(this.scenarioSortKey),
+				direction: this.scenarioSortDirection,
+			},
+			exportedAt,
+			scenarioCount: scenarios.length,
+			scenarios: scenarios.map((scenario) => ({
+				scenario: scenario.name,
+				description: scenario.description,
+				assumption: `순이익 ${formatNumber(scenario.netIncome)}억 × PER ${formatNumber(scenario.per)}배`,
+				netIncomeEok: scenario.netIncome,
+				per: scenario.per,
+				marketCapEok: scenario.marketCap,
+				totalShares: scenario.totalShares,
+				fairPriceKrw: scenario.fairPrice,
+				currentPriceKrw: scenario.currentPrice,
+				returnPercent: scenario.potentialPercent,
+				display: {
+					marketCap: `${formatNumber(scenario.marketCap)}억`,
+					fairPrice: `${formatPrice(scenario.fairPrice)}원`,
+					currentPrice: `${formatPrice(scenario.currentPrice)}원`,
+					return: formatPercent(scenario.potentialPercent),
+					createdAt: formatScenarioTime(scenario.createdAt),
+				},
+				createdAt: scenario.createdAt,
+			})),
+		};
+
+		const jsonText = JSON.stringify(payload, null, 2);
+		const text = this.includeQuestionInScenarioCopy
+			? await this.createScenarioQuestionCopyText(
+					jsonText,
+					scenarios.length,
+					exportedAt,
+				)
+			: jsonText;
+		if (text === null) {
+			return;
+		}
+
+		await navigator.clipboard.writeText(text);
+		new Notice(SCENARIO_JSON_COPY_SUCCESS_MESSAGE);
+	}
+
+	private async createScenarioQuestionCopyText(
+		jsonText: string,
+		scenarioCount: number,
+		exportedAt: string,
+	): Promise<string | null> {
+		const template = this.host.getScenarioQuestionTemplate();
+		if (!template.includes('{{json}}')) {
+			new Notice('질문 템플릿에는 {{json}} 치환 문자열이 필요합니다.');
+			return null;
+		}
+
+		const frontmatter = await this.host.getDocumentFrontmatter(
+			this.sourcePath,
+			this.initialFrontmatter,
+		);
+		const companyName = template.includes('{{asset_name}}')
+			? getCompanyName(frontmatter)
+			: '';
+		const symbol = template.includes('{{symbol}}')
+			? getFrontmatterField(frontmatter, 'symbol')
+			: '';
+		if (template.includes('{{asset_name}}') && companyName === null) {
+			new Notice(
+				'질문 포함 복사를 하려면 문서 frontmatter에 asset_name을 입력해주세요.',
+			);
+			return null;
+		}
+		if (template.includes('{{symbol}}') && symbol === null) {
+			new Notice(
+				'질문 포함 복사를 하려면 문서 frontmatter에 symbol을 입력해주세요.',
+			);
+			return null;
+		}
+
+		return renderScenarioQuestionTemplate(template, {
+			assetName: companyName ?? '',
+			symbol: symbol ?? '',
+			jsonText,
+			scenarioCount,
+			exportedAt,
+		});
 	}
 
 	private openScenarioForm(): void {
@@ -1020,6 +1203,14 @@ export class ValuationBlockRenderer extends MarkdownRenderChild {
 						? 'ascending'
 						: 'descending';
 			}
+			this.host.updateValuationScenarioSort(
+				this.guid,
+				{
+					key: this.scenarioSortKey,
+					direction: this.scenarioSortDirection,
+				},
+				this.instanceId,
+			);
 			this.renderScenarioList();
 		});
 	}
@@ -1142,6 +1333,72 @@ function formatScenarioTime(isoTime: string): string {
 		}, {});
 
 	return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function getScenarioSortLabel(key: ScenarioSortKey): string {
+	switch (key) {
+		case 'name':
+			return '시나리오';
+		case 'assumption':
+			return '가정';
+		case 'fairPrice':
+			return '적정가';
+		case 'potentialPercent':
+			return '현재 대비';
+		case 'createdAt':
+			return '저장 시점';
+	}
+}
+
+function getCompanyName(frontmatter: unknown): string | null {
+	return getFrontmatterField(frontmatter, 'asset_name');
+}
+
+function getFrontmatterField(frontmatter: unknown, key: string): string | null {
+	const data = isRecord(frontmatter) ? frontmatter : {};
+	const value = valueToString(data[key]);
+
+	return value.length > 0 ? value : null;
+}
+
+function renderScenarioQuestionTemplate(
+	template: string,
+	values: {
+		assetName: string;
+		symbol: string;
+		jsonText: string;
+		scenarioCount: number;
+		exportedAt: string;
+	},
+): string {
+	return template
+		.replaceAll('{{asset_name}}', values.assetName)
+		.replaceAll('{{symbol}}', values.symbol)
+		.replaceAll('{{json}}', values.jsonText)
+		.replaceAll('{{scenario_count}}', String(values.scenarioCount))
+		.replaceAll('{{exported_at}}', values.exportedAt);
+}
+
+function valueToString(value: unknown): string {
+	if (value === null || value === undefined) {
+		return '';
+	}
+	if (Array.isArray(value)) {
+		return value.map(valueToString).filter(Boolean)[0] ?? '';
+	}
+	if (
+		typeof value !== 'string' &&
+		typeof value !== 'number' &&
+		typeof value !== 'boolean'
+	) {
+		return '';
+	}
+
+	return String(value).trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object';
 }
 
 function isRangeBoundKey(key: TextValuationInputKey): boolean {

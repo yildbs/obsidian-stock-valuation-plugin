@@ -259,6 +259,72 @@
 	font-size: var(--font-ui-medium);
 }
 
+.stock-valuation-scenario-header-actions {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.stock-valuation-scenario-question-toggle {
+	display: inline-flex;
+	gap: 4px;
+	align-items: center;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+}
+
+.stock-valuation-scenario-question-toggle input {
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	margin: 0;
+}
+
+.stock-valuation-template-modal {
+	display: grid;
+	gap: 12px;
+}
+
+.stock-valuation-template-modal h2 {
+	margin: 0;
+}
+
+.stock-valuation-template-description,
+.stock-valuation-template-token-list {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	line-height: 1.5;
+}
+
+.stock-valuation-template-token-list {
+	display: grid;
+	gap: 4px;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-secondary);
+}
+
+.stock-valuation-template-textarea {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 14rem;
+	resize: vertical;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-small);
+	line-height: 1.45;
+}
+
+.stock-valuation-template-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: flex-end;
+}
+
 .stock-valuation-scenario-form-container {
 	display: grid;
 	gap: 10px;
